@@ -6,8 +6,6 @@ import winreg
 from .downloader import get_install_path, download_for_main
 import requests
 from .get_gpu import get_gpu
-from tqdm import tqdm
-import requests
 
 install_path = get_install_path()
 git_exe = os.path.join(install_path, 'system', 'git', 'cmd', 'git.exe')
@@ -32,8 +30,9 @@ def create_venv(repo_path, python):
     venv_path = os.path.join(repo_path, "venv")
     if not os.path.exists(venv_path):
         subprocess.run([python, "-m", "venv", venv_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    activate_script = os.path.join(venv_path, "Scripts", "activate.bat")
-    return venv_path, activate_script
+    python_venv = os.path.join(venv_path, "Scripts", "python.exe")
+    python_venv_scripts = os.path.join(venv_path, "Scripts", "activate.bat")
+    return python_venv, python_venv_scripts, venv_path
 
 def get_uv_path():
     scripts_dir = os.path.join(os.path.dirname(python), 'Scripts')
@@ -45,7 +44,6 @@ def install_uv():
         subprocess.run([python, "-m", "pip", "install", "uv"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError:
         return None
-    
     uv_executable = get_uv_path()
     if os.path.exists(uv_executable):
         return uv_executable
@@ -77,14 +75,10 @@ def get_system_language():
         lang_code = language.split('-')[0].lower()
         return "ru" if lang_code == "ru" else "en"
     except WindowsError:
-        lang_code = locale.getdefaultlocale()[0].split('_')[0].lower()
+        lang_code = locale.getlocale()[0].split('_')[0].lower()
         return "ru" if lang_code == "ru" else "en"
 
 def install_from_source(language):
-    language = get_system_language()
-    if language not in ["en", "ru"]:
-        language = "en"
-    
     choice = input(get_localized_text(language, "select_repo")).strip()
 
     if choice.isdigit() and 1 <= int(choice) <= len(repos):
@@ -97,9 +91,9 @@ def install_from_source(language):
     repo_name = repo_url.split('/')[-1].replace('.git', '')
     abs_path = get_install_path()
     sources_path = os.path.join(abs_path, "sources")
-    os.makedirs(sources_path, exist_ok=True)
     repo_home = os.path.join(sources_path, repo_name)
-    os.makedirs(repo_home, exist_ok=True)
+    if not os.path.exists(repo_home):
+        os.makedirs(repo_home)
 
     if not os.path.exists(repo_home) and not repo_name=="facefusion":
         os.chdir(sources_path)
@@ -122,7 +116,7 @@ def install_from_source(language):
             subprocess.run([git_exe, "pull", "origin", "master"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     repo_path = os.path.join(abs_path, "sources", repo_name)
-    venv_path, activate_script = create_venv(repo_path, python)
+    python_venv, python_venv_scripts, venv_path = create_venv(repo_path, python)
     uv_executable = install_uv()
 
     if repo_name == "facefusion":
@@ -130,23 +124,22 @@ def install_from_source(language):
     else:
         requirements_file = os.path.join(repo_path, "requirements.txt")
 
-    python_venv = os.path.join(install_path, 'system', repo_name, 'venv', 'Scripts', 'python.exe')
-    python_facefusion = os.path.join(install_path, 'system', 'facefusion', 'venv', 'Scripts', 'python.exe')
-
     if repo_name == "facefusion":
         app_name = "updater_facefusion.py"
     elif repo_name == "Rope-Live":
-        app_name == "Rope.py"
+        app_name = "Rope.py"
     elif repo_name == "LivePortrait":
         app_name = "app.py"
     elif repo_name == "ComfyUI":
-        app_name == "main.py"
+        app_name = "main.py"
     elif repo_name == "Deep-Live-Cam":
-        app_name == "run.py"
+        app_name = "run.py"
     elif repo_name == "stable-diffusion-webui-forge":
-        app_name == "webui.py"
+        app_name = "webui.py"
+    else:
+        app_name = "app.py"
 
-    if repo_name == "facefusion":
+    def bat_write():
         os.chdir(repo_home)
         tmp = os.path.join(repo_home, "tmp")
         if not os.path.exists(tmp):
@@ -158,42 +151,7 @@ for /d %%i in (tmp\\tmp*,tmp\\pip*) do rd /s /q "%%i" 2>nul || ("%%i" && exit /b
 set "appdata={tmp}"
 set "userprofile={tmp}"
 set "temp={tmp}"
-set "PATH=%PATH%;{git_cmd};{python_facefusion};{python_scripts};{ffmpeg};%PATH%"
-
-set "CUDA_MODULE_LOADING=LAZY"
-
-"{python_facefusion}" {app_name}
-pause
-endlocal
-REM by dony
-'''
-
-        with open('start_nvidia.bat', 'w') as bat_file:
-            bat_file.write(bat_content)
-        updater_facefusion_url = "https://huggingface.co/datasets/NeuroDonu/PortableSource/resolve/main/updater_facefusion.py"
-        updater_facefusion_name = "updater_facefusion.py"
-        response = requests.get(updater_facefusion_url, stream=True)
-        with open(updater_facefusion_name, 'wb') as out_file:
-            for chunk in response.iter_content(chunk_size=1024):
-                if chunk:
-                    out_file.write(chunk)
-    else:
-        os.chdir(repo_home)
-        tmp = os.path.join(repo_home, "tmp")
-        if not os.path.exists(tmp):
-            os.makedirs(tmp)
-        app_path = os.path.join(repo_home, "app.py")
-        if not os.path.exists(app_path):
-            print("not found app.py! please check correctly start_nvidia.bat! maybe he dont work.")
-        else:
-            bat_content = f'''@echo off
-setlocal enabledelayedexpansion
-for /d %%i in (tmp\\tmp*,tmp\\pip*) do rd /s /q "%%i" 2>nul || ("%%i" && exit /b 1) & del /q tmp\\tmp* > nul 2>&1 & rd /s /q pip\\cache 2>nul
-
-set "appdata={tmp}"
-set "userprofile={tmp}"
-set "temp={tmp}"
-set "PATH=%PATH%;{git_cmd};{python_venv};{python_scripts};{ffmpeg};%PATH%"
+set "PATH=%PATH%;{git_cmd};{python_venv};{python_venv_scripts};{ffmpeg};%PATH%"
 
 set "CUDA_MODULE_LOADING=LAZY"
 
@@ -202,8 +160,21 @@ pause
 endlocal
 REM by dony
 '''
-            with open('start_nvidia.bat', 'w') as bat_file:
-                bat_file.write(bat_content)
+
+        with open('start_nvidia.bat', 'w') as bat_file:
+            bat_file.write(bat_content)
+
+    if repo_name == "facefusion":
+        bat_write()
+        updater_facefusion_url = "https://raw.githubusercontent.com/portablesource/portablesource/refs/heads/main/portablesource/updater_facefusion.py"
+        updater_facefusion_name = "updater_facefusion.py"
+        response = requests.get(updater_facefusion_url, stream=True)
+        with open(updater_facefusion_name, 'wb') as out_file:
+            for chunk in response.iter_content(chunk_size=1024):
+                if chunk:
+                    out_file.write(chunk)
+    else:
+        bat_write()
     
     if os.path.exists(requirements_file):
         installed_flag = os.path.join(venv_path, ".libraries_installed")
@@ -218,61 +189,35 @@ REM by dony
         cuda_version = cuda_version.group(1) if cuda_version else None
         onnx_gpu = re.search(r'onnxruntime-gpu', requirements)
         onnxruntime = re.search(r'onnxruntime(?!-gpu)', requirements)
-
-        with open(requirements_file, 'w') as f:
+        
+        with open(requirements_file, 'r') as f:
             f.write(requirements)
 
-        install_cmd = f'"{activate_script}" && "{uv_executable}" pip install -r "{requirements_file}"'
+        install_cmd = f'"{python_venv}" && "{uv_executable}" pip install -r "{requirements_file}"'
         subprocess.run(install_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        insightface_cmd = f'"{activate_script}" && "{uv_executable}" pip install https://huggingface.co/hanamizuki-ai/insightface-releases/resolve/main/insightface-0.7.3-cp310-cp310-win_amd64.whl"'
+        insightface_cmd = f'"{python_venv}" && "{uv_executable}" pip install https://huggingface.co/hanamizuki-ai/insightface-releases/resolve/main/insightface-0.7.3-cp310-cp310-win_amd64.whl"'
         subprocess.run(insightface_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if torch_packages:
-            torch_cmd = f'"{activate_script}" && "{uv_executable}" pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/{cuda_version}'
+            torch_cmd = f'"{python_venv}" && "{uv_executable}" pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/{cuda_version}'
             subprocess.run(torch_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if onnx_fix and repo_name!="facefusion":
-            onnx_cmd = f'"{activate_script}" && "{uv_executable}" pip install onnx==1.16.1'
+            onnx_cmd = f'"{python_venv}" && "{uv_executable}" pip install onnx==1.16.1'
             subprocess.run(onnx_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         if onnx_gpu or onnxruntime:
             gpu = get_gpu()
             if gpu == "NVIDIA":
                 ort_version = "onnxruntime-gpu"
+                ort_lib_version = "1.18.0"
             elif gpu == "DIRECTML":
                 ort_version = "onnxruntime-directml"
+                ort_lib_version = "1.17.3"
             elif gpu == None:
                 ort_version = "onnxruntime"
+                ort_lib_version = "1.19.2"
 
-            install_cmd = f'"{activate_script}" && "{uv_executable}" pip install -r "{ort_version}==1.18.1"'
+            install_cmd = f'"{python_venv}" && "{uv_executable}" pip install -r "{ort_version}=={ort_lib_version}"'
             subprocess.run(install_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-            if gpu == "NVIDIA":
-                ort_dll_files = ["onnxruntime_providers_cuda.dll", "onnxruntime_providers_shared.dll", "onnxruntime_providers_tensorrt.dll"]
-                ort_lib_path = os.path.join(repo_path, "venv", "Lib", "site-packages", "onnxruntime")
-
-                for item in os.listdir(ort_lib_path):
-                    if item.endswith('dll'):
-                        item_path = os.path.join(ort_lib_path, item)
-                        if os.path.isfile(item_path):
-                            os.remove(item_path)
-
-                for file_name in ort_dll_files:
-                    file_url = f"https://huggingface.co/datasets/NeuroDonu/PortableSource/resolve/main/{file_name}"
-                    file_path = os.path.join(ort_lib_path, file_name)
-                    response = requests.get(file_url, stream=True)
-                    total_size = int(response.headers.get('content-length', 0))
-
-                    with open(file_path, 'wb') as file, tqdm(
-                    desc=file_name,
-                    total=total_size,
-                    unit='kB',
-                    unit_scale=True,
-                    unit_divisor=1024,
-                    ) as progress_bar:
-                        for data in response.iter_content(chunk_size=16384):
-                            size = file.write(data)
-                            progress_bar.update(size)
-
-        open(installed_flag, 'w').close()
 
     if repo_name == "Deep-Live-Cam":
         models_dir = os.path.join(repo_name, "models")
@@ -293,6 +238,4 @@ REM by dony
 
 def installed():
     language = get_system_language()
-    if language not in ["en", "ru"]:
-        language = "en"
     install_from_source(language)

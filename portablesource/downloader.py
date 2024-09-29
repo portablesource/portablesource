@@ -17,15 +17,29 @@ links = [
 
 gpu = get_gpu()
 
-def set_path(cuda_path):
-        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment", 0, winreg.KEY_ALL_ACCESS)
-        current_path = winreg.QueryValueEx(key, "Path")[0]
-        if cuda_path not in current_path:
-            new_path = current_path + ";" + cuda_path
-            winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, new_path)
-        winreg.CloseKey(key)
-        os.environ["PATH"] = new_path
+def set_path(path_to_add):
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+                            0, winreg.KEY_ALL_ACCESS) as key:
+            current_path = winreg.QueryValueEx(key, "Path")[0]
+            if path_to_add not in current_path:
+                new_path = f"{current_path};{path_to_add}"
+                winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, new_path)
+                os.environ["PATH"] = new_path 
         return True
+    except Exception as e:
+        return False
+
+def set_cuda_path(cuda_add_path):
+    try:
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment", 0, winreg.KEY_ALL_ACCESS)
+        winreg.SetValueEx(key, "CUDA_PATH", 0, winreg.REG_EXPAND_SZ, cuda_add_path)
+        winreg.CloseKey(key)
+        os.environ["CUDA_PATH"] = cuda_add_path
+        return True
+    except Exception as e:
+        return False
 
 def get_localized_text(language, key):
     texts = {
@@ -143,12 +157,10 @@ def extract_7z(archive_path, output_dir, seven_zip_path):
         return False
 
 def download_extract_and_cleanup(links, output_dir='system'):
-    #if gpu == "NVIDIA": #maybe
-        #required_folders = ['python', 'ffmpeg', 'git', 'CUDA']
-    #else:
-        #required_folders = ['python', 'ffmpeg', 'git']
-
-    required_folders = ['python', 'ffmpeg', 'git']
+    if gpu == "NVIDIA":
+        required_folders = ['python', 'ffmpeg', 'git', 'CUDA']
+    else:
+        required_folders = ['python', 'ffmpeg', 'git']
 
     missing_folders = [folder for folder in required_folders if not os.path.exists(os.path.join(output_dir, folder))]
 
@@ -175,7 +187,15 @@ def download_for_main():
     path = get_install_path()
     system = os.path.join(path, "system")
     download_extract_and_cleanup(links, output_dir=system)
-    #if gpu == "NVIDIA":
-        #cuda_path = os.path.join(system, "CUDA")
-        #if os.path.exists(cuda_path):
-            #set_path(cuda_path)
+    if gpu == "NVIDIA":
+        cuda_abs_path = os.path.join(system, "CUDA")
+        paths_to_add = [
+            os.path.join(cuda_abs_path, "bin"),
+            os.path.join(cuda_abs_path, "lib"),
+            os.path.join(cuda_abs_path, "include"),
+            os.path.join(cuda_abs_path, "libnvvp")
+        ]
+        if os.path.exists(cuda_abs_path):
+            set_cuda_path(paths_to_add[0])
+            for path in paths_to_add:
+                set_path(path)
