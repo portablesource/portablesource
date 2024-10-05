@@ -171,17 +171,15 @@ def download_extract_and_cleanup(links, output_dir='system'):
     if not os.path.exists(seven_zip_path):
         seven_zip_path = download_file(links[-1], output_dir)
 
-    archives_to_extract = []
-
     for link in links[:-1]:
         folder_name = os.path.splitext(os.path.basename(link))[0]
-        if folder_name in missing_folders:
-            file_path = download_file(link, output_dir)
-            archives_to_extract.append(file_path)
+        folder_path = os.path.join(output_dir, folder_name)
 
-    for archive in archives_to_extract:
-        if extract_7z(archive, output_dir, seven_zip_path):
-            os.remove(archive)
+        if os.path.exists(folder_path):
+            continue
+        archive_path = download_file(link, output_dir)
+        if extract_7z(archive_path, output_dir, seven_zip_path):
+            os.remove(archive_path) 
 
 def download_for_main():
     path = get_install_path()

@@ -142,6 +142,19 @@ def download_file(url, destination_dir):
                     file.write(chunk)
 
 def write_bat_file(repo_home, app_name, python_venv, python_venv_scripts):
+    gpu = get_gpu()
+    if gpu=="NVIDIA":
+        system = os.path.join(install_path, "system")
+        cuda_abs_path = os.path.join(system, "CUDA")
+        cuda_bin = os.path.join(cuda_abs_path, "bin")
+        cuda_lib = os.path.join(cuda_abs_path, "lib")
+        cuda_include = os.path.join(cuda_abs_path, "include")
+        cuda_libnvvp = os.path.join(cuda_abs_path, "libnvvp")
+        cuda_for_add = f"{cuda_bin};{cuda_lib};{cuda_include};{cuda_libnvvp}"
+        cuda_path = f'set "CUDA_PATH"={cuda_bin}'
+    else:
+        cuda_path = ""
+        cuda_for_add = ""
     os.chdir(repo_home)
     tmp = os.path.join(repo_home, "tmp")
     os.makedirs(tmp, exist_ok=True)
@@ -153,9 +166,10 @@ for /d %%i in (tmp\\tmp*,tmp\\pip*) do rd /s /q "%%i" 2>nul || ("%%i" && exit /b
 set "appdata={tmp}"
 set "userprofile={tmp}"
 set "temp={tmp}"
-set "PATH=%PATH%;{git_cmd};{python_venv};{python_venv_scripts};{ffmpeg};%PATH%"
+set "PATH=%PATH%;{cuda_for_add};{git_cmd};{python_venv};{python_venv_scripts};{ffmpeg};%PATH%"
 
 set "CUDA_MODULE_LOADING=LAZY"
+{cuda_path}
 
 "{python_venv}" {app_name}
 pause
