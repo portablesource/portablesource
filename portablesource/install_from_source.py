@@ -182,6 +182,7 @@ REM by dony
 def facefusion_repo_setup(repo_url, abs_path):
     ff_path = os.path.join(abs_path, "sources", "facefusion")
     ff_master = os.path.join(ff_path, "master")
+    ff_next = os.path.join(ff_path, "next")
     os.makedirs(ff_path, exist_ok=True)
     
     if not os.path.exists(ff_master):
@@ -190,6 +191,19 @@ def facefusion_repo_setup(repo_url, abs_path):
     else:
         os.chdir(ff_master)
         subprocess.run([git_exe, "pull", "origin", "master"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    if not os.path.exists(ff_next):
+        try:
+            os.chdir(ff_path)
+            subprocess.run([git_exe, "clone", repo_url, "-b", "next", "next"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except:
+            pass
+    else:
+        try:
+            os.chdir(ff_path)
+            subprocess.run([git_exe, "pull", "origin", "next"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except:
+            pass
 
 def determine_app_name(repo_name):
     repo_apps = {

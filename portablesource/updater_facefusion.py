@@ -78,6 +78,36 @@ def branch_path(branch):
     branch_path = os.path.join(ff_obs, branch)
     return branch_path
 
+def uncensore(branch):
+    file_path = os.path.join(ff_obs, branch, "facefusion", "content_analyser.py")
+    
+    with open(file_path, 'r', encoding='utf-8') as file:
+        lines = file.readlines()
+
+    modified_lines = []
+    inside_function = False
+    current_function = None
+    functions_to_modify = {
+        "def analyse_frame(vision_frame : VisionFrame) -> bool:": "def analyse_frame(vision_frame) -> bool:",
+        "def forward(vision_frame : VisionFrame) -> float:": "def forward(vision_frame) -> float:",
+        "def prepare_frame(vision_frame : VisionFrame) -> VisionFrame:": "def prepare_frame(vision_frame) -> VisionFrame:"
+    }
+
+    for line in lines:
+        if any(func in line for func in functions_to_modify.keys()):
+            inside_function = True
+            current_function = next(func for func in functions_to_modify if func in line)
+            modified_lines.append(line.replace(current_function, functions_to_modify[current_function]))
+        elif inside_function:
+            if "return" in line:
+                modified_lines.append("    return False\n")
+                inside_function = False
+        else:
+            modified_lines.append(line)
+
+    with open(file_path, 'w', encoding='utf-8') as file:
+        file.writelines(modified_lines)
+
 def update_branch(branch):
     path = branch_path(branch)
     os.chdir(path)
@@ -112,12 +142,15 @@ def facefusion():
         print(get_localized_text(language, "update_master"))
         print(get_localized_text(language, "update_next"))
         choice = input(get_localized_text(language, "enter_choice")).strip()
+
         if choice == '1':
-            update_branch('master')
+            update_branch("master")
             webcam_mode = ask_webcam_mode(language)
+            uncensore("master")
             start_ff("master", webcam_mode)
         elif choice == '2':
-            update_branch('next')
+            update_branch("next")
+            uncensore("next")
             webcam_mode = ask_webcam_mode(language)
             start_ff("next", webcam_mode)
         else:
