@@ -4,6 +4,7 @@ import re
 import locale
 import winreg
 from .downloader import get_install_path, download_for_main
+from .repos import repositories
 import requests
 from .get_gpu import get_gpu
 
@@ -72,9 +73,8 @@ def get_system_language():
         lang_code = locale.getlocale()[0].split('_')[0].lower()
         return "ru" if lang_code == "ru" else "en"
 
-def install_requirements(venv_path, python_venv, uv_executable, requirements_file):
+def install_requirements(venv_path, python_venv, requirements_file):
     if not os.path.exists(requirements_file):
-        print(f"Requirements file not found: {requirements_file}")
         return
 
     installed_flag = os.path.join(venv_path, ".libraries_installed")
@@ -85,25 +85,26 @@ def install_requirements(venv_path, python_venv, uv_executable, requirements_fil
 
         requirements = re.sub(r'(insightface).*\n', '', requirements)
         torch_packages = re.findall(r'(torch)', requirements)
-        cuda_version_match = re.search(r'\+cu(\d+)', requirements)
-        cuda_version = cuda_version_match.group(1) if cuda_version_match else None
         onnx_gpu = re.search(r'onnxruntime-gpu', requirements)
         
         with open(requirements_file, 'w') as f:
             f.write(requirements)
         
-        install_cmd = f'"{python_venv}" && "{uv_executable}" pip install -r "{requirements_file}"'
+        install_cmd = f'"{python_venv}" -m uv pip install -r "{requirements_file}'
         subprocess.run(install_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        insightface_cmd = f'"{python_venv}" && "{uv_executable}" pip install https://huggingface.co/hanamizuki-ai/insightface-releases/resolve/main/insightface-0.7.3-cp310-cp310-win_amd64.whl'
+        gpu = get_gpu()
+        insightface_cmd = f'"{python_venv}" -m uv pip install https://huggingface.co/hanamizuki-ai/insightface-releases/resolve/main/insightface-0.7.3-cp310-cp310-win_amd64.whl'
         subprocess.run(insightface_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if onnx_gpu is not None:
-            install_onnx_runtime(python_venv, uv_executable)
-        if torch_packages:
-            torch_cmd = f'"{python_venv}" && "{uv_executable}" pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu{cuda_version}"'
+            install_onnx_runtime(python_venv)
+        if torch_packages and gpu!="DIRECTML":
+            torch_cmd = f'"{python_venv}" -m uv pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu124'
+            subprocess.run(torch_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            torch_cmd = f'"{python_venv}" -m uv pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0'
             subprocess.run(torch_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-def install_onnx_runtime(python_venv, uv_executable):
+def install_onnx_runtime(python_venv):
     gpu = get_gpu()
     if gpu == "NVIDIA":
         ort_version, ort_lib_version = "onnxruntime-gpu", "1.18.0"
@@ -112,11 +113,11 @@ def install_onnx_runtime(python_venv, uv_executable):
     else:
         ort_version, ort_lib_version = "onnxruntime", "1.19.2"
 
-    install_cmd = f'"{python_venv}" && "{uv_executable}" pip install {ort_version}=={ort_lib_version}"'
+    install_cmd = f'"{python_venv}" -m uv pip install {ort_version}=={ort_lib_version}'
     subprocess.run(install_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def download_models(repo_name):
-    if repo_name == "Deep-Live-Cam":
+    if repo_name == "Deep-Live-Cam" or repo_name == "iRoopDeepFaceCam":
         models_dir = os.path.join(repo_name, "models")
         os.makedirs(models_dir, exist_ok=True)
         
@@ -216,6 +217,15 @@ def determine_app_name(repo_name):
     }
     return repo_apps.get(repo_name, "app.py")
 
+def install_custom_requirements(python_venv, libraries):
+    for lib in libraries:
+        install_cmd = f'"{python_venv}"  -m uv pip install {lib}'
+        subprocess.run(install_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def install_torch_with_index(python_venv, torch, torchvision, torchaudio, torch_index):
+    install_cmd = f'"{python_venv}" -m pip install {torch} {torchvision} {torchaudio} --extra-index-url {torch_index}'
+    subprocess.run(install_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 def download_updater_facefusion():
     updater_facefusion_url = "https://raw.githubusercontent.com/portablesource/portablesource/refs/heads/main/portablesource/updater_facefusion.py"
     updater_facefusion_name = "updater_facefusion.py"
@@ -234,6 +244,8 @@ def install_from_source(language):
     else:
         repo_url = choice
 
+    repo_info = repositories.get(repo_url, None)
+
     download_for_main()
 
     repo_name = repo_url.split('/')[-1].replace('.git', '')
@@ -242,28 +254,51 @@ def install_from_source(language):
     repo_home = os.path.join(sources_path, repo_name)
     os.makedirs(repo_home, exist_ok=True)
 
-    if repo_name != "facefusion":
-        os.chdir(sources_path)
-        repo_abs = os.path.join(sources_path, repo_name)
-        if not os.path.exists(repo_abs):
-            subprocess.run([git_exe, "clone", repo_url, repo_name], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if repo_info:
+        if not os.path.exists(repo_home):
+            subprocess.run([git_exe, "clone", repo_url, "-b", repo_info["main_branch"], repo_home], check=True)
         else:
-            os.chdir(repo_abs)
-            subprocess.run([git_exe, "pull", "origin"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            os.chdir(repo_home)
+            subprocess.run([git_exe, "pull", "origin", repo_info["main_branch"]], check=True)
+        app_name = repo_info["executable"]
+
+        python_venv, python_venv_scripts, venv_path = create_venv(repo_home, python)
+
+        gpu_type = get_gpu()
+        if gpu_type == "NVIDIA":
+            libraries = repo_info["nvidia_libraries"]
+            torch = repo_info["torch"]
+            torchvision = repo_info["torchvision"]
+            torchaudio = repo_info["torchaudio"]
+            torch_index = repo_info["torch_index"]
+        elif gpu_type == "DIRECTML":
+            libraries = repo_info["directml_libraries"]
+            torch = repo_info["torch"]
+            torchvision = repo_info["torchvision"]
+            torchaudio = repo_info["torchaudio"]
+        else:
+            libraries = []
+
+        requirements_file = os.path.join(repo_home, "requirements.txt")
+        install_custom_requirements(python_venv, libraries)
+        install_torch_with_index(python_venv, torch, torchvision, torchaudio, torch_index)
     else:
-        facefusion_repo_setup(repo_url, abs_path)
+        if not os.path.exists(repo_home):
+            subprocess.run([git_exe, "clone", repo_url, repo_name], check=True)
+        else:
+            os.chdir(repo_home)
+            subprocess.run([git_exe, "pull", "origin"], check=True)
 
-    repo_path = os.path.join(abs_path, "sources", repo_name)
-    python_venv, python_venv_scripts, venv_path = create_venv(repo_path, python)
-    uv_executable = get_uv_path()
+        python_venv, python_venv_scripts, venv_path = create_venv(repo_home, python)
+        uv_executable = get_uv_path()
 
-    requirements_file = os.path.join(repo_path, "master" if repo_name == "facefusion" else "", "requirements.txt")
+        requirements_file = os.path.join(repo_home, "requirements.txt")
+        install_requirements(venv_path, python_venv, uv_executable, requirements_file)
+        install_onnx_runtime(python_venv, uv_executable)
 
-    install_requirements(venv_path, python_venv, uv_executable, requirements_file)
-    app_name = determine_app_name(repo_name)
+        app_name = determine_app_name(repo_name)
 
     write_bat_file(repo_home, app_name, python_venv, python_venv_scripts)
-
     if repo_name == "facefusion":
         download_updater_facefusion()
 
