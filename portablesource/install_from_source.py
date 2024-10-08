@@ -264,15 +264,15 @@ def install_from_source(language):
 
         python_venv, python_venv_scripts, venv_path = create_venv(repo_home, python)
 
-        gpu_type = get_gpu()
-        if gpu_type == "NVIDIA":
+        gpus = get_gpu()
+        if "NVIDIA" in gpus:
             main_lib = repo_info["main_lib"]
             libraries = repo_info["nvidia_libraries"]
             torch = repo_info["torch"]
             torchvision = repo_info["torchvision"]
             torchaudio = repo_info["torchaudio"]
             torch_index = repo_info["torch_index"]
-        elif gpu_type == "DIRECTML":
+        elif "AMD" in gpus or "INTEL" in gpus:
             main_lib = repo_info["main_lib"]
             libraries = repo_info["directml_libraries"]
             torch = repo_info["torch"]

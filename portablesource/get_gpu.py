@@ -11,13 +11,17 @@ def get_gpu():
     elif system == "Linux":
         output = subprocess.check_output(["lspci"]).decode("utf-8")
         gpus = [line for line in output.splitlines() if "VGA" in line or "3D" in line]
-    
-    for gpu in gpus:
-        if "NVIDIA" in gpu.upper():
-            return "NVIDIA"
-        elif "INTEL" in gpu.upper():
-            return "DIRECTML"
-        elif "AMD" in gpu.upper():
-            return "DIRECTML"
 
-    return "CPU"
+    gpu_types = set()
+
+    for gpu in gpus:
+        if 'NVIDIA' in gpu.upper():
+            gpu_types.add("NVIDIA")
+        elif 'AMD' in gpu.upper():
+            gpu_types.add("AMD")
+        elif 'INTEL' in gpu.upper():
+            gpu_types.add("INTEL")
+        else:
+            gpu_types.add("CPU")
+
+    return list(gpu_types)
