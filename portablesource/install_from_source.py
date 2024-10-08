@@ -266,12 +266,14 @@ def install_from_source(language):
 
         gpu_type = get_gpu()
         if gpu_type == "NVIDIA":
+            main_lib = repo_info["main_lib"]
             libraries = repo_info["nvidia_libraries"]
             torch = repo_info["torch"]
             torchvision = repo_info["torchvision"]
             torchaudio = repo_info["torchaudio"]
             torch_index = repo_info["torch_index"]
         elif gpu_type == "DIRECTML":
+            main_lib = repo_info["main_lib"]
             libraries = repo_info["directml_libraries"]
             torch = repo_info["torch"]
             torchvision = repo_info["torchvision"]
@@ -280,8 +282,12 @@ def install_from_source(language):
             libraries = []
 
         requirements_file = os.path.join(repo_home, "requirements.txt")
+        install_custom_requirements(python_venv, main_lib)
         install_custom_requirements(python_venv, libraries)
-        install_torch_with_index(python_venv, torch, torchvision, torchaudio, torch_index)
+        if torch is None:
+            pass
+        else:
+            install_torch_with_index(python_venv, torch, torchvision, torchaudio, torch_index)
     else:
         if not os.path.exists(repo_home):
             subprocess.run([git_exe, "clone", repo_url, repo_name], check=True)

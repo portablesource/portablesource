@@ -2,7 +2,7 @@ repositories = {
     "https://github.com/facefusion/facefusion": {
         "main_branch": "master",
         "executable": "updater_facefusion.py",
-        "nvidia_libraries": [
+        "main_lib" : [
             "filetype==1.2.0", 
             "gradio==4.44.0", 
             "gradio-rangeslider==0.0.6", 
@@ -12,23 +12,16 @@ repositories = {
             "opencv-python==4.10.0.84", 
             "psutil==6.0.0", 
             "tqdm==4.66.5", 
-            "scipy==1.14.1"],
+            "scipy==1.14.1"
+        ],
+        "nvidia_libraries": [ 
+            "onnxruntime-gpu==1.18.0"],
         "directml_libraries": [
-            "filetype==1.2.0", 
-            "gradio==4.44.0", 
-            "gradio-rangeslider==0.0.6", 
-            "numpy==1.26.4", 
-            "onnx==1.16.1", 
-            "onnxruntime-directml==1.17.3", 
-            "opencv-python==4.10.0.84", 
-            "psutil==6.0.0", 
-            "tqdm==4.66.5", 
-            "scipy==1.14.1"],
+            "onnxruntime-directml==1.17.3"],
         "torch": None,
         "torchvision": None,
         "torchaudio": None,
         "torch_index": None,
-
     },
     "https://github.com/KwaiVGI/LivePortrait": {
         "main_branch": "main",
