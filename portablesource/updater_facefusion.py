@@ -71,7 +71,7 @@ abs_path = get_path_for_install()
 git = os.path.join(abs_path, "system", "git", "cmd", "git.exe")
 ff_obs = os.path.join(abs_path, "sources", "facefusion")
 python = os.path.join(abs_path, "sources", "facefusion", "venv", "Scripts", "python.exe")
-parser = argparse.ArgumentParser
+parser = argparse.ArgumentParser()
 
 parser.add_argument('-wf', '--webcam-false', action='store_true', help="Выключить режим веб-камеры")
 parser.add_argument('-wt', '--webcam-true', action='store_true', help="Включить режим веб-камеры")
