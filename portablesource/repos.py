@@ -23,16 +23,4 @@ repositories = {
         "torchaudio": None,
         "torch_index": None,
     },
-    "https://github.com/KwaiVGI/LivePortrait": {
-        "main_branch": "main",
-        "executable": "app.py",
-        "nvidia_libraries": ["onnxruntime-gpu==1.18.0", "transformers==4.22.0"],
-        "directml_libraries": ["onnxruntime-directml==1.17.3", "transformers==4.22.0"]
-    },
-    "https://github.com/lllyasviel/stable-diffusion-webui-forge": {
-        "main_branch": "main",
-        "executable": "webui.py",
-        "nvidia_libraries": ["torch==2.4.0", "torchvision==0.19.0"],
-        "directml_libraries": ["onnxruntime-directml==1.17.3"]
-    },
 }

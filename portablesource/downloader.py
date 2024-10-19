@@ -98,24 +98,41 @@ def get_installed_path():
     except Exception as e:
         return None
 
+def find_ps():
+    drives = [f"{chr(letter)}:\\" for letter in range(65, 91) if os.path.exists(f"{chr(letter)}:\\")]
+    for drive in drives:
+        for root, dirs in os.walk(drive):
+            if 'portablesource' in dirs:
+                potential_path = os.path.join(root, 'portablesource', 'installed.txt')
+                if os.path.exists(potential_path):
+                    return potential_path
+    return None
+
 def get_path_for_install():
     language = get_system_language()
-    if language not in ["en", "ru"]:
-        language = "en"
-    default_path = "C:\\"
-    user_input = input(get_localized_text(language, "which_path")).strip()
-    install_path = user_input if user_input else default_path
+    potential_path = find_ps()
 
-    full_path = os.path.join(install_path, 'portablesource')
-    if not os.path.exists(full_path):
+    if potential_path is None:
+        default_path = "C:\\"
+        user_input = input(get_localized_text(language, "which_path")).strip()
+
+        install_path = user_input if user_input and os.path.exists(user_input) else default_path
+
+        full_path = os.path.join(install_path, 'portablesource')
+        if not os.path.exists(full_path):
+            try:
+                os.makedirs(full_path)
+            except OSError:
+                print(get_localized_text(language, "error_creating_directory"))
+                return get_path_for_install()
         try:
-            os.makedirs(full_path)
+            with open(os.path.join(full_path, 'installed.txt'), 'w') as f:
+                f.write('installed')
         except OSError:
-            print(get_localized_text(language, "error_creating_directory"))
-            return get_path_for_install()
-
-    with open(os.path.join(full_path, 'installed.txt'), 'w') as f:
-        f.write('installed')
+            print(get_localized_text(language, "error_writing_file"))
+            return None
+    else:
+        full_path = potential_path
 
     return full_path
 
