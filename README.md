@@ -1,38 +1,20 @@
-# sv
+# PortableSource
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Easy install ANY AI by few clicks.
 
-## Creating a project
+## License
 
-If you're seeing this, you've probably already done this step. Congrats!
+Copyright (c) 2025 PortableSource / NeuroDonu
 
-```bash
-# create a new project in the current directory
-npx sv create
+This work is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License**.
 
-# create a new project in my-app
-npx sv create my-app
-```
+This means you are free to share and adapt the material, but:
+- You **must give credit**.
+- You **cannot use it for commercial purposes**.
+- You **must share any adaptations under the same license**.
 
-## Developing
+**In plain English: NO ONE is allowed to sell this software or use it in a commercial product without my explicit written permission.**
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+For the full legal code, see the [LICENSE](LICENSE) file.
 
-```bash
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```bash
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+For commercial licensing inquiries, please contact me at `contact@portables.dev`
