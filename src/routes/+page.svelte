@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
   import { open } from '@tauri-apps/plugin-dialog';
   import { onMount } from 'svelte';
 
@@ -208,7 +209,7 @@
       for (const repoName of installedRepoNames) {
         try {
           // Get repository information from server
-          const response = await fetch(`http://${host}/api/search?q=${repoName}`);
+          const response = await fetch(`/api/search?q=${repoName}`);
           if (response.ok) {
             const data = await response.json();
             const repoInfo = data.repositories?.find((r: Repository) => r.name === repoName);
@@ -245,7 +246,7 @@
 
   async function loadAvailableRepos() {
     try {
-      const response = await fetch(`http://${host}/api/repositories/top?limit=10`);
+      const response = await fetch(`/api/repositories/top?limit=10`);
       const data = await response.json();
       
       if (data.success && data.repositories) {
@@ -280,6 +281,16 @@
   // Repository management functions
   async function installRepo(repoName: string) {
     try {
+      // Check if CLI is installed first
+      if (!cliInstalled) {
+        installStatus = 'CLI must be installed first. Redirecting to settings...';
+        setTimeout(() => {
+          setCurrentView('settings');
+          sidebarOpen = false;
+        }, 1500);
+        return;
+      }
+
       // Check if repository is already installed by folder presence
       const isInstalled = await checkRepoInstallStatus(repoName);
       if (isInstalled) {
@@ -435,21 +446,62 @@
 
   async function setupEnvironment() {
     try {
-      installStatus = 'Setting up environment...';
-      const result = await invoke('run_cli_command', { installPath, args: ['--setup-env'] }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
+      isSettingUpEnv = true;
+      installStatus = 'Installing env... Please wait...';
       
-      if (result.success) {
-        // Check installation result
-        const envInstalled = await invoke('check_environment_installed', { installPath }) as boolean;
-        environmentSetup = envInstalled;
-        installStatus = envInstalled ? 'Environment successfully set up!' : 'Environment setup verification failed';
-      } else {
-        installStatus = `Environment setup error: ${result.stderr || 'Unknown error'}`;
-        environmentSetup = false;
-      }
+      const eventId = `setup-env-${Date.now()}`;
+      
+      // Listen for CLI output events
+      const unlistenOutput = await listen(`cli-output-${eventId}`, (event: any) => {
+        const output = event.payload;
+        console.log(`[${output.stream}] ${output.data}`);
+        
+        // Update status with real-time output
+        if (output.data.includes('Downloading Miniconda')) {
+          installStatus = 'Downloading Miniconda...';
+        } else if (output.data.includes('%')) {
+          // Extract progress percentage if available
+          const progressMatch = output.data.match(/(\d+)%/);
+          if (progressMatch) {
+            installStatus = `Downloading Miniconda: ${progressMatch[1]}%`;
+          }
+        } else if (output.data.includes('Installing')) {
+          installStatus = 'Installing Miniconda...';
+        } else if (output.data.includes('Creating')) {
+          installStatus = 'Creating base environment...';
+        }
+      });
+      
+      // Listen for completion event
+      const unlistenFinished = await listen(`cli-finished-${eventId}`, async (event: any) => {
+        const result = event.payload;
+        
+        if (result.success) {
+          // Check installation result
+          const envInstalled = await invoke('check_environment_installed', { installPath }) as boolean;
+          environmentSetup = envInstalled;
+          installStatus = envInstalled ? 'Env installed!' : 'Environment setup verification failed';
+        } else {
+          installStatus = `Environment setup error: Exit code ${result.exit_code}`;
+          environmentSetup = false;
+        }
+        
+        isSettingUpEnv = false;
+        unlistenOutput();
+        unlistenFinished();
+      });
+      
+      // Start the streaming command
+      await invoke('run_cli_command_stream', { 
+        installPath, 
+        args: ['--setup-env'],
+        eventId 
+      });
+      
     } catch (error) {
       installStatus = `Environment setup error: ${error}`;
       environmentSetup = false;
+      isSettingUpEnv = false;
     }
   }
 

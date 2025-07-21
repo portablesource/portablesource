@@ -258,6 +258,13 @@
       return;
     }
 
+    // Check if CLI is installed first
+    if (!cliInstalled) {
+      installStatus = 'CLI must be installed first. Go to "Setup" tab and click "Install CLI".';
+      activeTab = 'setup';
+      return;
+    }
+
     // Check environment presence before installation
     try {
       const envInstalled = await invoke('check_environment_installed', { installPath }) as boolean;
@@ -465,6 +472,11 @@
               <button on:click={testCliInstallation}>Check Again</button>
               <button class="reset-btn" on:click={resetInstallation}>Reinstall</button>
             </div>
+          {:else}
+            <p class="error">❌ CLI not installed</p>
+            <button class="install-btn" on:click={savePathAndStartInstallation} disabled={isInstalling}>
+              {isInstalling ? 'Installing...' : 'Install CLI'}
+            </button>
           {/if}
         </div>
       {/if}

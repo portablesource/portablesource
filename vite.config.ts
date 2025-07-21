@@ -6,6 +6,13 @@ export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
 	server: {
 		port: 1337,
-		host: true
+		host: true,
+		proxy: {
+			'/api': {
+				target: 'https://portables.dev',
+				changeOrigin: true,
+				secure: true
+			}
+		}
 	}
 });
