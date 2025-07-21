@@ -43,6 +43,8 @@
   let showInstallNotification = false;
   let installedRepoName = '';
 
+  export const host = "portables.dev";
+
   onMount(async () => {
     try {
       installPath = await invoke('get_install_path');
@@ -206,7 +208,7 @@
       for (const repoName of installedRepoNames) {
         try {
           // Get repository information from server
-          const response = await fetch(`http://localhost:5173/api/search?q=${repoName}`);
+          const response = await fetch(`http://${host}/api/search?q=${repoName}`);
           if (response.ok) {
             const data = await response.json();
             const repoInfo = data.repositories?.find((r: Repository) => r.name === repoName);
@@ -243,7 +245,7 @@
 
   async function loadAvailableRepos() {
     try {
-      const response = await fetch('http://localhost:5173/api/repositories/top?limit=10');
+      const response = await fetch(`http://${host}/api/repositories/top?limit=10`);
       const data = await response.json();
       
       if (data.success && data.repositories) {

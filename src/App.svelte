@@ -24,6 +24,8 @@
   let isInstallingRepo = false;
   let activeTab = 'setup';
 
+  export const host = "portables.dev";
+
   onMount(async () => {
     try {
       installPath = await invoke('get_install_path');
@@ -235,7 +237,7 @@
 
   async function loadAvailableRepos() {
     try {
-      const response = await fetch('http://localhost:5173/api/repositories/top?limit=5');
+      const response = await fetch(`http://${host}/api/repositories/top?limit=5`);
       if (response.ok) {
         const repos = await response.json() as Array<{name: string}>;
         availableRepos = repos.map(repo => repo.name);
