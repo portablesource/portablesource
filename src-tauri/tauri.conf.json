@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "portablesource",
   "version": "0.0.1",
-  "identifier": "dev.portablesource.app",
+  "identifier": "dev.portablesource",
   "build": {
     "frontendDist": "../build",
     "devUrl": "http://localhost:1337",
@@ -21,13 +21,26 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "connect-src": ["'self'", "https://portables.dev", "http://ipc.localhost"],
+        "style-src": "'self' 'unsafe-inline'"
+      }
     }
   },
-  "plugins": {},
+  "plugins": {
+    "allowlist": {
+      "http": {
+        "all": false,
+        "scope": [
+          "https://**"
+        ]
+      }
+    }
+  },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["msi", "nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

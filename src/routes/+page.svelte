@@ -246,8 +246,8 @@
 
   async function loadAvailableRepos() {
     try {
-      const response = await fetch(`/api/repositories/top?limit=10`);
-      const data = await response.json();
+      const response = await invoke('proxy_request', { url: `https://${host}/api/repositories/top?limit=10` }) as string;
+      const data = JSON.parse(response);
       
       if (data.success && data.repositories) {
         availableRepos = data.repositories.map((repo: any) => ({

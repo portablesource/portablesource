@@ -7,6 +7,19 @@ use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
 use tauri::Emitter;
 
+#[tauri::command]
+async fn proxy_request(url: String) -> Result<String, String> {
+    let response = reqwest::get(&url)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!("Request failed with status: {}", response.status()));
+    }
+
+    let body = response.text().await.map_err(|e| e.to_string())?;
+    Ok(body)
+}
 
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -492,6 +505,7 @@ pub fn run() {
             download_and_install_cli,
             test_cli_installation,
             run_cli_command,
+        proxy_request,
             clear_install_path,
             check_environment_installed,
             check_repository_installed,
