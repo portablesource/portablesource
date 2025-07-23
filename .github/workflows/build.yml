@@ -41,25 +41,11 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_name: 'Release ${{ github.ref_name }}'
-          body: 'See the assets to download and install this version.'
-          draft: false
-          prerelease: false
-
       - name: Build the app
-        id: tauri
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          uploadUrl: ${{ steps.create_release.outputs.upload_url }}
           includeDebug: false
           includeRelease: true
 
@@ -68,13 +54,17 @@ jobs:
         run: Rename-Item -Path src-tauri/target/release/portablesource.exe -NewName portablesource-portable.exe
         shell: pwsh
 
-      - name: Upload portable executable
+      - name: Create Release and Upload Assets
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: src-tauri/target/release/portablesource-portable.exe
-          asset_name: portablesource-${{ github.ref_name }}-portable.exe
-          asset_content_type: application/octet-stream
+        run: |
+          gh release create ${{ github.ref_name }} --generate-notes
+
+          $msiPath = (Get-ChildItem -Path src-tauri/target/release/bundle/msi/*.msi).FullName
+          $nsisPath = (Get-ChildItem -Path src-tauri/target/release/bundle/nsis/*.exe).FullName
+
+          gh release upload ${{ github.ref_name }} $msiPath --clobber
+          gh release upload ${{ github.ref_name }} $nsisPath --clobber
+          gh release upload ${{ github.ref_name }} src-tauri/target/release/portablesource-portable.exe --clobber
+        shell: pwsh
