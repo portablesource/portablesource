@@ -1,2 +1,1 @@
-1. Write logic for install MSVC Build Tools
-2. Add admin permisions for GUI (cause we install MSVC for use triton/sage/any who need compile for work)
+1. Add admin permisions for GUI (cause we install MSVC for use triton/sage/any who need compile for work)
