@@ -76,6 +76,19 @@ async fn get_install_path() -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn find_cli_installation() -> Result<String, String> {
+    // Get path from registry (CLI saves it there)
+    let path = get_install_path().await?;
+    let exe_path = Path::new(&path).join("portablesource_main.exe");
+    
+    if exe_path.exists() {
+        Ok(path)
+    } else {
+        Err("CLI executable not found at registered path".to_string())
+    }
+}
+
+#[tauri::command]
 async fn download_and_install_cli(install_path: String) -> Result<InstallResult, String> {
     let install_dir = Path::new(&install_path);
     
@@ -481,25 +494,30 @@ async fn check_environment_status(install_path: String) -> Result<EnvironmentSta
         });
     }
     
-    // Run CLI with --check-env flag
+    // Run CLI with --check-env flag from its directory with UTF-8 encoding
     let output = Command::new(&exe_path)
         .arg("--check-env")
+        .current_dir(&install_path)
+        .env("PYTHONIOENCODING", "utf-8")
         .output()
         .map_err(|e| format!("Failed to run CLI check-env: {}", e))?;
     
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         return Ok(EnvironmentStatus {
             environment_exists: false,
             setup_completed: false,
-            overall_status: "Environment check failed".to_string(),
+            overall_status: format!("Environment check failed: {}", stderr),
         });
     }
     
     let stdout = String::from_utf8_lossy(&output.stdout);
     
-    // Parse output to check for "Setup completed: YES"
+    // Parse output to check for "Setup completed: YES" and environment status
+    // Use text-based checks instead of emoji to avoid encoding issues
     let setup_completed = stdout.contains("Setup completed: YES");
-    let environment_exists = stdout.contains("Environment exists: ✅");
+    let environment_exists = stdout.contains("Environment exists:") && 
+                           (stdout.contains("YES") || stdout.contains("✅") || stdout.contains("checkmark"));
     
     let overall_status = if setup_completed {
         "Ready".to_string()
@@ -556,6 +574,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             set_install_path,
             get_install_path,
+            find_cli_installation,
             download_and_install_cli,
             test_cli_installation,
             run_cli_command,

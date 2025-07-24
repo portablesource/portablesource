@@ -11,6 +11,8 @@
   let installStatus = '';
   let installTimer = 0;
   let installTimerInterval: number | null = null;
+  let installProgress = 0;
+  let maxInstallTime = 20; // Maximum expected install time in seconds
   
   // Main interface state
   let cliInstalled = false;
@@ -57,31 +59,25 @@
 
   async function performInitialCheck() {
     try {
-      // Check if install path exists in registry
-      installPath = await invoke('get_install_path');
-      console.log('Install path loaded:', installPath);
+      // Try to find CLI installation automatically
+      installPath = await invoke('find_cli_installation');
+      console.log('CLI found at:', installPath);
+      cliInstalled = true;
       
-      // Check if CLI is installed
-      await checkCliInstallation();
+      // Check environment status using CLI command
+      await checkEnvironmentStatus();
       
-      if (cliInstalled) {
-        // Check environment status using new CLI command
-        await checkEnvironmentStatus();
-        
-        if (environmentStatus.setup_completed) {
-          // Environment is ready, go to main interface
-          currentStep = 'main-interface';
-          await loadEnvironmentAndRepos();
-        } else {
-          // Environment needs setup
-          currentStep = 'environment-setup';
-        }
+      if (environmentStatus.setup_completed) {
+        // Environment is ready, go to main interface
+        currentStep = 'main-interface';
+        await loadEnvironmentAndRepos();
       } else {
-        // CLI not installed, show installation options
-        currentStep = 'path-selection';
+        // Environment needs setup
+        currentStep = 'environment-setup';
       }
     } catch (error) {
-      console.log('No install path found in registry, showing path selection');
+      console.log('CLI not found, showing installation options:', error);
+      cliInstalled = false;
       currentStep = 'path-selection';
     }
     
@@ -127,13 +123,18 @@
   async function startInstallationProcess() {
     isInstalling = true;
     installTimer = 0;
+    installProgress = 0;
     installStatus = 'Installation in progress, please wait a moment';
     
-    // Start timer
+    // Start timer and progress
     installTimerInterval = setInterval(() => {
       installTimer++;
+      // Update progress based on time (smooth progress bar)
+      installProgress = Math.min((installTimer / maxInstallTime) * 100, 95); // Cap at 95% until completion
+      
       if (installTimer >= 15 && isInstalling) {
         installStatus = 'Please wait a little longer';
+        maxInstallTime = 30; // Extend expected time for slow connections
       }
     }, 1000);
     
@@ -142,7 +143,7 @@
       if (result.success) {
         await testCliInstallation();
         if (cliInstalled) {
-          finishInstallation();
+          await finishInstallation();
         } else {
           installStatus = 'CLI installation check error';
         }
@@ -154,14 +155,25 @@
     }
   }
   
-  function finishInstallation() {
+  async function finishInstallation() {
+    installProgress = 100; // Complete the progress bar
     isInstalling = false;
     if (installTimerInterval) {
       clearInterval(installTimerInterval);
       installTimerInterval = null;
     }
-    currentStep = 'main-interface';
-    loadEnvironmentAndRepos();
+    
+    // After CLI installation, check environment status
+    await checkEnvironmentStatus();
+    
+    if (environmentStatus.setup_completed) {
+      // Environment is ready, go to main interface
+      currentStep = 'main-interface';
+      await loadEnvironmentAndRepos();
+    } else {
+      // Environment needs setup
+      currentStep = 'environment-setup';
+    }
   }
   
   async function loadEnvironmentAndRepos() {
@@ -170,17 +182,21 @@
     await loadAvailableRepos();
   }
 
-  async function testCliInstallation() {
+  async function testCliInstallation(showError = true) {
     try {
       const result = await invoke('test_cli_installation', { installPath }) as {success: boolean, message?: string};
       if (result.success) {
         cliInstalled = true;
       } else {
         cliInstalled = false;
-        installStatus = `CLI testing error: ${result.message}`;
+        if (showError) {
+          installStatus = `CLI testing error: ${result.message}`;
+        }
       }
     } catch (error) {
-      installStatus = `Testing error: ${error}`;
+      if (showError) {
+        installStatus = `Testing error: ${error}`;
+      }
       cliInstalled = false;
     }
   }
@@ -226,6 +242,7 @@
         overall_status: string
       };
       environmentStatus = status;
+      return status;
     } catch (error) {
       console.error('Error checking environment status:', error);
       environmentStatus = {
@@ -233,6 +250,7 @@
         setup_completed: false,
         overall_status: 'Check failed'
       };
+      return environmentStatus;
     } finally {
       isCheckingEnvironment = false;
     }
@@ -250,9 +268,9 @@
       
       if (result.success) {
         installStatus = 'Environment setup completed!';
-        await checkEnvironmentStatus();
+        const status = await checkEnvironmentStatus();
         
-        if (environmentStatus.setup_completed) {
+        if (status.setup_completed) {
           currentStep = 'main-interface';
           await loadEnvironmentAndRepos();
         }
@@ -706,6 +724,14 @@
           <div class="spinner"></div>
           <p class="installation-text">{installStatus}</p>
           <p class="timer">Time elapsed: {installTimer} sec</p>
+          
+          <!-- Progress Bar -->
+          <div class="progress-container">
+            <div class="progress-bar">
+              <div class="progress-fill" style="width: {installProgress}%"></div>
+            </div>
+            <div class="progress-text">{Math.round(installProgress)}%</div>
+          </div>
         </div>
       </div>
     {/if}
@@ -738,15 +764,9 @@
         
         <div class="environment-actions">
           {#if isSettingUpEnvironment}
-            <div class="installation-progress">
-              <div class="spinner"></div>
-              <p class="installation-text">{installStatus}</p>
-            </div>
+            <p class="status">{installStatus}</p>
           {:else if isCheckingEnvironment}
-            <div class="installation-progress">
-              <div class="spinner"></div>
-              <p class="installation-text">Checking environment status...</p>
-            </div>
+            <p class="status">Checking environment status...</p>
           {:else}
             <button 
               class="setup-env-button" 
@@ -773,10 +793,6 @@
             {/if}
           {/if}
         </div>
-        
-        {#if installStatus}
-          <p class="status">{installStatus}</p>
-        {/if}
       </div>
     {/if}
     
@@ -888,7 +904,7 @@
             {#if cliInstalled}
               <p class="success">✓ CLI installed and working</p>
               <div class="action-buttons">
-                <button on:click={testCliInstallation}>Check again</button>
+                <button on:click={() => testCliInstallation(true)}>Check again</button>
                 <button class="reset-btn" on:click={resetInstallation}>Reinstall</button>
               </div>
             {:else}
@@ -1652,6 +1668,66 @@
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
   }
 
+  /* Progress Bar Styles */
+  .progress-container {
+    margin-top: 20px;
+    width: 100%;
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .progress-bar {
+    width: 100%;
+    height: 12px;
+    background: #e9ecef;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #007acc 0%, #20c997 50%, #28a745 100%);
+    border-radius: 6px;
+    transition: width 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.3) 50%,
+      transparent 100%
+    );
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  .progress-text {
+    text-align: center;
+    margin-top: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #495057;
+  }
+
   @media (max-width: 768px) {
     .environment-step {
       max-width: 90%;
@@ -1667,6 +1743,10 @@
       min-width: 100%;
       padding: 12px 20px;
       font-size: 14px;
+    }
+
+    .progress-container {
+      max-width: 100%;
     }
   }
 </style>
