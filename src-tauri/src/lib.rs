@@ -462,6 +462,60 @@ async fn run_command(command: String, working_dir: Option<String>) -> Result<Com
     })
 }
 
+#[derive(Clone, serde::Serialize)]
+struct EnvironmentStatus {
+    environment_exists: bool,
+    setup_completed: bool,
+    overall_status: String,
+}
+
+#[tauri::command]
+async fn check_environment_status(install_path: String) -> Result<EnvironmentStatus, String> {
+    let exe_path = Path::new(&install_path).join("portablesource_main.exe");
+    
+    if !exe_path.exists() {
+        return Ok(EnvironmentStatus {
+            environment_exists: false,
+            setup_completed: false,
+            overall_status: "CLI not installed".to_string(),
+        });
+    }
+    
+    // Run CLI with --check-env flag
+    let output = Command::new(&exe_path)
+        .arg("--check-env")
+        .output()
+        .map_err(|e| format!("Failed to run CLI check-env: {}", e))?;
+    
+    if !output.status.success() {
+        return Ok(EnvironmentStatus {
+            environment_exists: false,
+            setup_completed: false,
+            overall_status: "Environment check failed".to_string(),
+        });
+    }
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    // Parse output to check for "Setup completed: YES"
+    let setup_completed = stdout.contains("Setup completed: YES");
+    let environment_exists = stdout.contains("Environment exists: ✅");
+    
+    let overall_status = if setup_completed {
+        "Ready".to_string()
+    } else if environment_exists {
+        "Environment exists but setup incomplete".to_string()
+    } else {
+        "Environment not found".to_string()
+    };
+    
+    Ok(EnvironmentStatus {
+        environment_exists,
+        setup_completed,
+        overall_status,
+    })
+}
+
 #[tauri::command]
 async fn clear_install_path() -> Result<InstallResult, String> {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
@@ -508,6 +562,7 @@ pub fn run() {
         proxy_request,
             clear_install_path,
             check_environment_installed,
+            check_environment_status,
             check_repository_installed,
             list_directory_folders,
             run_command,

@@ -5,7 +5,7 @@
   import { onMount } from 'svelte';
 
   // Installation flow state
-  let currentStep = 'main-interface'; // 'path-selection', 'installing', 'main-interface'
+  let currentStep = 'initial-check'; // 'initial-check', 'path-selection', 'installing', 'environment-setup', 'main-interface'
   let installPath = '';
   let isInstalling = false;
   let installStatus = '';
@@ -17,6 +17,13 @@
   let cliOutput: string = '';
   let cliCommand = '';
   let environmentSetup = false;
+  let environmentStatus = {
+    environment_exists: false,
+    setup_completed: false,
+    overall_status: 'Unknown'
+  };
+  let isCheckingEnvironment = false;
+  let isSettingUpEnvironment = false;
   interface Repository {
     id?: number;
     name: string;
@@ -33,9 +40,7 @@
   }
 
   let installedRepos: InstalledRepository[] = [];
-  let availableRepos: Repository[] = [];
-  let selectedRepo = '';
-  let isSettingUpEnv = false;
+  let availableRepos: Repository[] = [];  let selectedRepo = '';
   let isInstallingRepo = false;
   
   // UI state
@@ -47,22 +52,42 @@
   export const host = "portables.dev";
 
   onMount(async () => {
+    await performInitialCheck();
+  });
+
+  async function performInitialCheck() {
     try {
+      // Check if install path exists in registry
       installPath = await invoke('get_install_path');
       console.log('Install path loaded:', installPath);
+      
+      // Check if CLI is installed
       await checkCliInstallation();
+      
       if (cliInstalled) {
-        await checkEnvironmentSetup();
-        await loadInstalledRepos();
-        await loadAvailableRepos();
+        // Check environment status using new CLI command
+        await checkEnvironmentStatus();
+        
+        if (environmentStatus.setup_completed) {
+          // Environment is ready, go to main interface
+          currentStep = 'main-interface';
+          await loadEnvironmentAndRepos();
+        } else {
+          // Environment needs setup
+          currentStep = 'environment-setup';
+        }
+      } else {
+        // CLI not installed, show installation options
+        currentStep = 'path-selection';
       }
     } catch (error) {
-      console.log('No install path found in registry');
+      console.log('No install path found in registry, showing path selection');
+      currentStep = 'path-selection';
     }
     
     // Always load available repos for the interface
     await loadAvailableRepos();
-  });
+  }
 
   async function selectInstallPath() {
     try {
@@ -184,13 +209,64 @@
     }
   }
 
-  // Stubs for environment and repository functions
+  // Environment functions
   async function checkEnvironmentSetup() {
     try {
       const envInstalled = await invoke('check_environment_installed', { installPath }) as boolean;
       environmentSetup = envInstalled;
     } catch (error) {
       environmentSetup = false;
+    }
+  }
+
+  async function checkEnvironmentStatus() {
+    try {
+      isCheckingEnvironment = true;
+      const status = await invoke('check_environment_status', { installPath }) as {
+        environment_exists: boolean,
+        setup_completed: boolean,
+        overall_status: string
+      };
+      environmentStatus = status;
+      environmentSetup = status.setup_completed;
+    } catch (error) {
+      console.error('Error checking environment status:', error);
+      environmentStatus = {
+        environment_exists: false,
+        setup_completed: false,
+        overall_status: 'Check failed'
+      };
+      environmentSetup = false;
+    } finally {
+      isCheckingEnvironment = false;
+    }
+  }
+
+  async function setupEnvironment() {
+    try {
+      isSettingUpEnvironment = true;
+      installStatus = 'Setting up environment...';
+      
+      const result = await invoke('run_cli_command', { 
+        installPath, 
+        args: ['--setup-env'] 
+      }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
+      
+      if (result.success) {
+        installStatus = 'Environment setup completed!';
+        await checkEnvironmentStatus();
+        
+        if (environmentStatus.setup_completed) {
+          currentStep = 'main-interface';
+          await loadEnvironmentAndRepos();
+        }
+      } else {
+        installStatus = `Environment setup failed: ${result.stderr || 'Unknown error'}`;
+      }
+    } catch (error) {
+      installStatus = `Environment setup error: ${error}`;
+    } finally {
+      isSettingUpEnvironment = false;
     }
   }
 
@@ -444,66 +520,7 @@
     }
   }
 
-  async function setupEnvironment() {
-    try {
-      isSettingUpEnv = true;
-      installStatus = 'Installing env... Please wait...';
-      
-      const eventId = `setup-env-${Date.now()}`;
-      
-      // Listen for CLI output events
-      const unlistenOutput = await listen(`cli-output-${eventId}`, (event: any) => {
-        const output = event.payload;
-        console.log(`[${output.stream}] ${output.data}`);
-        
-        // Update status with real-time output
-        if (output.data.includes('Downloading Miniconda')) {
-          installStatus = 'Downloading Miniconda...';
-        } else if (output.data.includes('%')) {
-          // Extract progress percentage if available
-          const progressMatch = output.data.match(/(\d+)%/);
-          if (progressMatch) {
-            installStatus = `Downloading Miniconda: ${progressMatch[1]}%`;
-          }
-        } else if (output.data.includes('Installing')) {
-          installStatus = 'Installing Miniconda...';
-        } else if (output.data.includes('Creating')) {
-          installStatus = 'Creating base environment...';
-        }
-      });
-      
-      // Listen for completion event
-      const unlistenFinished = await listen(`cli-finished-${eventId}`, async (event: any) => {
-        const result = event.payload;
-        
-        if (result.success) {
-          // Check installation result
-          const envInstalled = await invoke('check_environment_installed', { installPath }) as boolean;
-          environmentSetup = envInstalled;
-          installStatus = envInstalled ? 'Env installed!' : 'Environment setup verification failed';
-        } else {
-          installStatus = `Environment setup error: Exit code ${result.exit_code}`;
-          environmentSetup = false;
-        }
-        
-        isSettingUpEnv = false;
-        unlistenOutput();
-        unlistenFinished();
-      });
-      
-      // Start the streaming command
-      await invoke('run_cli_command_stream', { 
-        installPath, 
-        args: ['--setup-env'],
-        eventId 
-      });
-      
-    } catch (error) {
-      installStatus = `Environment setup error: ${error}`;
-      environmentSetup = false;
-      isSettingUpEnv = false;
-    }
-  }
+
 
   async function checkEnvironment() {
     try {
@@ -648,6 +665,19 @@
 
   <!-- Main Content -->
   <div class="main-content" class:shifted={sidebarOpen}>
+    <!-- Initial Check Step -->
+    {#if currentStep === 'initial-check'}
+      <div class="step-container environment-step">
+        <h1 class="step-title">PortableSource</h1>
+        <p class="step-description">Checking your installation...</p>
+        
+        <div class="installation-progress">
+          <div class="spinner"></div>
+          <p class="installation-text">Performing initial checks...</p>
+        </div>
+      </div>
+    {/if}
+    
     <!-- Step 1: Path Selection -->
     {#if currentStep === 'path-selection'}
       <div class="step-container">
@@ -694,7 +724,77 @@
       </div>
     {/if}
     
-    <!-- Step 3: Main Interface -->
+    <!-- Step 3: Environment Setup -->
+    {#if currentStep === 'environment-setup'}
+      <div class="step-container environment-step">
+        <h1 class="step-title">Environment Setup Required</h1>
+        <p class="step-description">PortableSource CLI is installed, but the environment needs to be set up.</p>
+        
+        <div class="environment-status">
+          <h3>Current Status:</h3>
+          <div class="status-item">
+            <span class="status-label">Environment exists:</span>
+            <span class="status-value {environmentStatus.environment_exists ? 'success' : 'error'}">
+              {environmentStatus.environment_exists ? '✅' : '❌'}
+            </span>
+          </div>
+          <div class="status-item">
+            <span class="status-label">Setup completed:</span>
+            <span class="status-value {environmentStatus.setup_completed ? 'success' : 'error'}">
+              {environmentStatus.setup_completed ? 'YES' : 'NO'}
+            </span>
+          </div>
+          <div class="status-item">
+            <span class="status-label">Overall status:</span>
+            <span class="status-value">{environmentStatus.overall_status}</span>
+          </div>
+        </div>
+        
+        <div class="environment-actions">
+          {#if isSettingUpEnvironment}
+            <div class="installation-progress">
+              <div class="spinner"></div>
+              <p class="installation-text">{installStatus}</p>
+            </div>
+          {:else if isCheckingEnvironment}
+            <div class="installation-progress">
+              <div class="spinner"></div>
+              <p class="installation-text">Checking environment status...</p>
+            </div>
+          {:else}
+            <button 
+              class="setup-env-button" 
+              on:click={setupEnvironment}
+              disabled={environmentStatus.setup_completed}
+            >
+              {environmentStatus.setup_completed ? '✓ Environment Ready' : 'Setup Environment'}
+            </button>
+            
+            <button 
+              class="check-env-button" 
+              on:click={checkEnvironmentStatus}
+            >
+              Check Status Again
+            </button>
+            
+            {#if environmentStatus.setup_completed}
+              <button 
+                class="continue-button" 
+                on:click={() => { currentStep = 'main-interface'; loadEnvironmentAndRepos(); }}
+              >
+                Continue to Repositories
+              </button>
+            {/if}
+          {/if}
+        </div>
+        
+        {#if installStatus}
+          <p class="status">{installStatus}</p>
+        {/if}
+      </div>
+    {/if}
+    
+    <!-- Step 4: Main Interface -->
     {#if currentStep === 'main-interface'}
       <!-- Successful installation notification -->
       {#if showInstallNotification}
@@ -1498,5 +1598,120 @@
   .env-setup-btn:disabled {
     opacity: 1 !important;
     cursor: default !important;
+  }
+
+  /* Environment Setup Page Styles */
+  .environment-step {
+    max-width: 600px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .environment-status {
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    margin: 30px 0;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e9ecef;
+  }
+
+  .environment-status h3 {
+    color: #495057;
+    font-size: 1.2rem;
+    margin-bottom: 20px;
+    font-weight: 600;
+  }
+
+  .status-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #f8f9fa;
+  }
+
+  .status-item:last-child {
+    border-bottom: none;
+  }
+
+  .status-label {
+    font-weight: 500;
+    color: #495057;
+  }
+
+  .status-value {
+    font-weight: 600;
+  }
+
+  .status-value.success {
+    color: #28a745;
+  }
+
+  .status-value.error {
+    color: #dc3545;
+  }
+
+  .environment-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    align-items: center;
+  }
+
+  .setup-env-button, .check-env-button, .continue-button {
+    padding: 15px 30px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    min-width: 200px;
+  }
+
+  .setup-env-button {
+    background: linear-gradient(135deg, #007acc 0%, #005a9e 100%);
+    color: white;
+  }
+
+  .setup-env-button:disabled {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    cursor: default;
+  }
+
+  .check-env-button {
+    background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+    color: white;
+  }
+
+  .continue-button {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    color: white;
+  }
+
+  .setup-env-button:hover:not(:disabled),
+  .check-env-button:hover,
+  .continue-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  }
+
+  @media (max-width: 768px) {
+    .environment-step {
+      max-width: 90%;
+      padding: 0 15px;
+    }
+
+    .environment-status {
+      padding: 20px;
+      margin: 20px 0;
+    }
+
+    .setup-env-button, .check-env-button, .continue-button {
+      min-width: 100%;
+      padding: 12px 20px;
+      font-size: 14px;
+    }
   }
 </style>
