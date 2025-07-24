@@ -16,7 +16,7 @@
   let cliInstalled = false;
   let cliOutput: string = '';
   let cliCommand = '';
-  let environmentSetup = false;
+
   let environmentStatus = {
     environment_exists: false,
     setup_completed: false,
@@ -198,7 +198,6 @@
       // Reset state
       installPath = '';
       cliInstalled = false;
-      environmentSetup = false;
       installedRepos = [];
       availableRepos = [];
       installStatus = '';
@@ -213,9 +212,8 @@
   async function checkEnvironmentSetup() {
     try {
       const envInstalled = await invoke('check_environment_installed', { installPath }) as boolean;
-      environmentSetup = envInstalled;
     } catch (error) {
-      environmentSetup = false;
+      // Environment check failed
     }
   }
 
@@ -228,7 +226,6 @@
         overall_status: string
       };
       environmentStatus = status;
-      environmentSetup = status.setup_completed;
     } catch (error) {
       console.error('Error checking environment status:', error);
       environmentStatus = {
@@ -236,7 +233,6 @@
         setup_completed: false,
         overall_status: 'Check failed'
       };
-      environmentSetup = false;
     } finally {
       isCheckingEnvironment = false;
     }
@@ -520,20 +516,6 @@
     }
   }
 
-
-
-  async function checkEnvironment() {
-    try {
-      installStatus = 'Checking environment...';
-      const envInstalled = await invoke('check_environment_installed', { installPath }) as boolean;
-      environmentSetup = envInstalled;
-      installStatus = envInstalled ? 'Environment is working' : 'Environment is not set up';
-    } catch (error) {
-      installStatus = `Environment check error: ${error}`;
-      environmentSetup = false;
-    }
-  }
-
   async function removeAllRepos() {
     try {
       installStatus = 'Removing all repositories...';
@@ -604,15 +586,18 @@
 </script>
 
 <main>
-  <!-- Hamburger Menu Button -->
-  <button class="hamburger-btn" on:click={toggleSidebar} aria-label="Toggle navigation menu">
-    <div class="hamburger-line"></div>
-    <div class="hamburger-line"></div>
-    <div class="hamburger-line"></div>
-  </button>
+  <!-- Hamburger Menu Button - only show in main interface -->
+  {#if currentStep === 'main-interface'}
+    <button class="hamburger-btn" on:click={toggleSidebar} aria-label="Toggle navigation menu">
+      <div class="hamburger-line"></div>
+      <div class="hamburger-line"></div>
+      <div class="hamburger-line"></div>
+    </button>
+  {/if}
 
-  <!-- Sidebar -->
-  <div class="sidebar" class:open={sidebarOpen}>
+  <!-- Sidebar - only show in main interface -->
+  {#if currentStep === 'main-interface'}
+    <div class="sidebar" class:open={sidebarOpen}>
     <div class="sidebar-content">
       <h3>PortableSource</h3>
       
@@ -645,10 +630,11 @@
         </button>
       </div>
     </div>
-  </div>
+    </div>
+  {/if}
 
-  <!-- Overlay -->
-  {#if sidebarOpen}
+  <!-- Overlay - only show in main interface -->
+  {#if currentStep === 'main-interface' && sidebarOpen}
     <div 
       class="overlay" 
       role="button" 
@@ -910,19 +896,6 @@
               <button class="install-cli-btn" on:click={savePathAndStartInstallation}>Install CLI</button>
             {/if}
           </div>
-
-          <div class="settings-section">
-             <h2>Environment</h2>
-             <div class="action-buttons">
-               {#if environmentSetup}
-                 <button class="env-setup-btn" disabled>✓ Already set up</button>
-               {:else}
-                 <button on:click={setupEnvironment}>Setup Environment</button>
-               {/if}
-               <button on:click={checkEnvironment}>Check Environment</button>
-             </div>
-           </div>
-
            <div class="settings-section">
               <h2>Repository Management</h2>
               <div class="action-buttons">
@@ -1580,24 +1553,6 @@
       transform: translateX(0);
       opacity: 1;
     }
-  }
-
-  /* Environment Setup Button */
-  .env-setup-btn {
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
-    color: white !important;
-    border: none !important;
-    padding: 10px 20px !important;
-    border-radius: 6px !important;
-    cursor: default !important;
-    font-size: 14px !important;
-    font-weight: 500 !important;
-    opacity: 1 !important;
-  }
-
-  .env-setup-btn:disabled {
-    opacity: 1 !important;
-    cursor: default !important;
   }
 
   /* Environment Setup Page Styles */
