@@ -44,6 +44,11 @@
   let installedRepos: InstalledRepository[] = [];
   let availableRepos: Repository[] = [];  let selectedRepo = '';
   let isInstallingRepo = false;
+  let installingRepoName = '';
+  let isUpdatingRepo = false;
+  let updatingRepoName = '';
+  let isRemovingRepo = false;
+  let removingRepoName = '';
   
   // UI state
   let sidebarOpen = false;
@@ -227,8 +232,14 @@
   // Environment functions
   async function checkEnvironmentSetup() {
     try {
-      const envInstalled = await invoke('check_environment_installed', { installPath }) as boolean;
+      const envStatus = await invoke('check_environment_status', { installPath }) as {
+        environment_exists: boolean,
+        setup_completed: boolean,
+        overall_status: string
+      };
+      environmentStatus = envStatus;
     } catch (error) {
+      console.error('Error checking environment setup:', error);
       // Environment check failed
     }
   }
@@ -371,6 +382,9 @@
   // Repository management functions
   async function installRepo(repoName: string) {
     try {
+      isInstallingRepo = true;
+      installingRepoName = repoName;
+      
       // Check if CLI is installed first
       if (!cliInstalled) {
         installStatus = 'CLI must be installed first. Redirecting to settings...';
@@ -383,6 +397,7 @@
 
       // Check if repository is already installed by folder presence
       const isInstalled = await checkRepoInstallStatus(repoName);
+      
       if (isInstalled) {
         // Show notification and navigate to installed repositories
         installedRepoName = repoName;
@@ -394,15 +409,23 @@
         return;
       }
 
-      // Check environment presence before installation
-      const envInstalled = await invoke('check_environment_installed', { installPath }) as boolean;
-      if (!envInstalled) {
+      // Check environment presence before installation using proper status check
+      const envStatus = await invoke('check_environment_status', { installPath }) as {
+        environment_exists: boolean,
+        setup_completed: boolean,
+        overall_status: string
+      };
+      
+      if (!envStatus.setup_completed) {
         installStatus = 'Environment must be set up first. Go to settings and click "Setup Environment".';
         return;
       }
 
       installStatus = `Installing ${repoName}...`;
-      const result = await invoke('run_cli_command', { installPath, args: ['--install-repo', repoName] }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
+      
+      const cliArgs = ['--install-repo', repoName];
+      
+      const result = await invoke('run_cli_command', { installPath, args: cliArgs }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
       
       if (result.success) {
         await loadInstalledRepos();
@@ -418,10 +441,14 @@
           setCurrentView('installed-repos');
         }, 3000);
       } else {
-        installStatus = `Installation error ${repoName}: ${result.stderr || 'Unknown error'}`;
+        installStatus = `Installation error ${repoName}: ${result.stderr || result.stdout || 'Unknown error'}`;
       }
     } catch (error) {
+      console.error('Error during repository installation:', error);
       installStatus = `Installation error ${repoName}: ${error}`;
+    } finally {
+      isInstallingRepo = false;
+      installingRepoName = '';
     }
   }
 
@@ -430,11 +457,17 @@
     try {
       // Get folder lists in envs and repos directories
       const envsFolders = await invoke('list_directory_folders', { installPath, directoryName: 'envs' }) as string[];
+      
       const reposFolders = await invoke('list_directory_folders', { installPath, directoryName: 'repos' }) as string[];
       
       // Repository is considered installed only if it exists in both directories
-      return envsFolders.includes(repoName) && reposFolders.includes(repoName);
+      const isInEnvs = envsFolders.includes(repoName);
+      const isInRepos = reposFolders.includes(repoName);
+      const isInstalled = isInEnvs && isInRepos;
+      
+      return isInstalled;
     } catch (error) {
+      console.error('Error checking repository installation status:', error);
       return false;
     }
   }
@@ -470,6 +503,8 @@
 
   async function updateRepo(repoName: string) {
     try {
+      isUpdatingRepo = true;
+      updatingRepoName = repoName;
       installStatus = `Updating ${repoName}...`;
       
       // Use CLI command --update-repo
@@ -485,11 +520,16 @@
       }
     } catch (error) {
       installStatus = `Update error ${repoName}: ${error}`;
+    } finally {
+      isUpdatingRepo = false;
+      updatingRepoName = '';
     }
   }
 
   async function removeRepo(repoName: string) {
     try {
+      isRemovingRepo = true;
+      removingRepoName = repoName;
       installStatus = `Removing ${repoName}...`;
       
       // Remove repository folders from envs and repos
@@ -518,6 +558,9 @@
       }
     } catch (error) {
       installStatus = `Removal error ${repoName}: ${error}`;
+    } finally {
+      isRemovingRepo = false;
+      removingRepoName = '';
     }
   }
 
@@ -840,18 +883,44 @@
                  <button class="install-repo-btn" disabled>Checking...</button>
                {:then isInstalled}
                  {#if isInstalled}
-                   <button class="installed-repo-btn" on:click={() => setCurrentView('installed-repos')}>
-                     ✓ Installed
+                   <button class="open-repo-btn" on:click={() => setCurrentView('installed-repos')}>
+                     Open
+                   </button>
+                 {:else if isInstallingRepo && installingRepoName === repo.name}
+                   <button class="install-repo-btn installing" disabled>
+                     <span class="spinner"></span>
+                     Installing...
                    </button>
                  {:else}
-                   <button class="install-repo-btn" on:click={() => installRepo(repo.name)}>Install</button>
+                   <button class="install-repo-btn" on:click={() => {
+                     installRepo(repo.name);
+                   }} disabled={isInstallingRepo}>Install</button>
                  {/if}
                {:catch}
-                 <button class="install-repo-btn" on:click={() => installRepo(repo.name)}>Install</button>
+                 {#if isInstallingRepo && installingRepoName === repo.name}
+                   <button class="install-repo-btn installing" disabled>
+                     <span class="spinner"></span>
+                     Installing...
+                   </button>
+                 {:else}
+                   <button class="install-repo-btn" on:click={() => {
+                     installRepo(repo.name);
+                   }} disabled={isInstallingRepo}>Install</button>
+                 {/if}
                {/await}
              </div>
            {/each}
          </div>
+         
+         <!-- Installation Status Display -->
+         {#if installStatus && isInstallingRepo}
+           <div class="installation-status">
+             <div class="status-content">
+               <span class="spinner"></span>
+               <span class="status-text">{installStatus}</span>
+             </div>
+           </div>
+         {/if}
       {/if}
 
       <!-- Installed Repositories View -->
@@ -871,8 +940,22 @@
                     {#if repo.hasLauncher}
                       <button class="launch-btn" on:click={() => runRepo(repo.name)}>Launch</button>
                     {/if}
-                    <button class="update-btn" on:click={() => updateRepo(repo.name)}>Update</button>
-                    <button class="remove-btn" on:click={() => removeRepo(repo.name)}>Remove</button>
+                    {#if isUpdatingRepo && updatingRepoName === repo.name}
+                      <button class="update-btn updating" disabled>
+                        <span class="spinner"></span>
+                        Updating...
+                      </button>
+                    {:else}
+                      <button class="update-btn" on:click={() => updateRepo(repo.name)} disabled={isUpdatingRepo || isRemovingRepo}>Update</button>
+                    {/if}
+                    {#if isRemovingRepo && removingRepoName === repo.name}
+                      <button class="remove-btn removing" disabled>
+                        <span class="spinner"></span>
+                        Removing...
+                      </button>
+                    {:else}
+                      <button class="remove-btn" on:click={() => removeRepo(repo.name)} disabled={isUpdatingRepo || isRemovingRepo}>Remove</button>
+                    {/if}
                   </div>
                 </div>
               {/each}
@@ -1258,10 +1341,26 @@
     cursor: pointer;
     font-weight: 500;
     transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
   }
 
-  .installed-repo-btn {
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  .install-repo-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .install-repo-btn.installing {
+    background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+  }
+
+
+
+  .open-repo-btn {
+    background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
     color: white;
     border: none;
     padding: 12px 24px;
@@ -1269,16 +1368,16 @@
     cursor: pointer;
     font-weight: 500;
     transition: all 0.3s ease;
-    box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+    box-shadow: 0 2px 8px rgba(23, 162, 184, 0.3);
   }
 
-  .installed-repo-btn:hover {
-    background: linear-gradient(135deg, #20c997 0%, #17a2b8 100%);
+  .open-repo-btn:hover {
+    background: linear-gradient(135deg, #138496 0%, #117a8b 100%);
     transform: translateY(-1px);
-    box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
+    box-shadow: 0 4px 15px rgba(23, 162, 184, 0.4);
   }
 
-  .install-repo-btn:hover {
+  .install-repo-btn:hover:not(:disabled) {
     transform: translateY(-1px);
     box-shadow: 0 4px 15px rgba(0, 122, 204, 0.3);
   }
@@ -1748,5 +1847,85 @@
     .progress-container {
       max-width: 100%;
     }
+  }
+
+  /* Spinner Styles */
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid white;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Installation Status Styles */
+  .installation-status {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #007acc 0%, #005a9e 100%);
+    color: white;
+    padding: 16px 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 123, 204, 0.3);
+    z-index: 1000;
+    animation: slideInUp 0.3s ease;
+  }
+
+  .status-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .status-content .spinner {
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid white;
+  }
+
+  .status-text {
+    font-weight: 500;
+    font-size: 14px;
+  }
+
+  @keyframes slideInUp {
+    from {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  /* Update and Remove Button Spinner Styles */
+  .update-btn.updating,
+  .remove-btn.removing {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: not-allowed;
+    opacity: 0.8;
+  }
+
+  .update-btn.updating .spinner {
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid white;
+  }
+
+  .remove-btn.removing .spinner {
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid white;
   }
 </style>
