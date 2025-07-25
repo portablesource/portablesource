@@ -578,7 +578,7 @@ pub fn run() {
             download_and_install_cli,
             test_cli_installation,
             run_cli_command,
-        proxy_request,
+            proxy_request,
             clear_install_path,
             check_environment_installed,
             check_environment_status,
