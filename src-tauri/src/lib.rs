@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
 use tauri::Emitter;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 #[tauri::command]
 async fn proxy_request(url: String) -> Result<String, String> {
     let response = reqwest::get(&url)
@@ -163,9 +166,14 @@ async fn test_cli_installation(install_path: String) -> Result<InstallResult, St
     }
     
     // Test CLI with -h flag
-    let output = Command::new(&exe_path)
-        .arg("-h")
-        .output()
+    let mut cmd = Command::new(&exe_path);
+    cmd.arg("-h");
+    
+    // Hide console window on Windows
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    
+    let output = cmd.output()
         .map_err(|e| format!("Failed to run CLI test: {}", e))?;
     
     if output.status.success() {
@@ -185,11 +193,16 @@ async fn test_cli_installation(install_path: String) -> Result<InstallResult, St
 async fn run_cli_command(install_path: String, args: Vec<String>) -> Result<CommandResult, String> {
     let exe_path = Path::new(&install_path).join("portablesource_main.exe");
     
-    let output = Command::new(&exe_path)
-        .args(&args)
+    let mut cmd = Command::new(&exe_path);
+    cmd.args(&args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
+        .stderr(Stdio::piped());
+    
+    // Hide console window on Windows
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    
+    let output = cmd.output()
         .map_err(|e| format!("Failed to run CLI command: {}", e))?;
     
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -225,10 +238,14 @@ async fn run_command_stream(
         cmd.current_dir(dir);
     }
     
-    let mut child = cmd
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+    cmd.stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    
+    // Hide console window on Windows
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    
+    let mut child = cmd.spawn()
         .map_err(|e| format!("Failed to spawn command: {}", e))?;
     
     let stdout = child.stdout.take().unwrap();
@@ -300,11 +317,16 @@ async fn run_cli_command_stream(
 ) -> Result<(), String> {
     let exe_path = Path::new(&install_path).join("portablesource_main.exe");
     
-    let mut child = Command::new(&exe_path)
-        .args(&args)
+    let mut cmd = Command::new(&exe_path);
+    cmd.args(&args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .stderr(Stdio::piped());
+    
+    // Hide console window on Windows
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    
+    let mut child = cmd.spawn()
         .map_err(|e| format!("Failed to spawn CLI command: {}", e))?;
     
     let stdout = child.stdout.take().unwrap();
@@ -457,10 +479,14 @@ async fn run_command(command: String, working_dir: Option<String>) -> Result<Com
         cmd.current_dir(dir);
     }
     
-    let output = cmd
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
+    cmd.stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    
+    // Hide console window on Windows
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    
+    let output = cmd.output()
         .map_err(|e| format!("Failed to execute command: {}", e))?;
     
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -495,11 +521,16 @@ async fn check_environment_status(install_path: String) -> Result<EnvironmentSta
     }
     
     // Run CLI with --check-env flag from its directory with UTF-8 encoding
-    let output = Command::new(&exe_path)
-        .arg("--check-env")
+    let mut cmd = Command::new(&exe_path);
+    cmd.arg("--check-env")
         .current_dir(&install_path)
-        .env("PYTHONIOENCODING", "utf-8")
-        .output()
+        .env("PYTHONIOENCODING", "utf-8");
+    
+    // Hide console window on Windows
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    
+    let output = cmd.output()
         .map_err(|e| format!("Failed to run CLI check-env: {}", e))?;
     
     if !output.status.success() {
