@@ -1,6 +1,9 @@
 # PortableSource
 
 Easy install ANY AI by few clicks.
+
+Speak russian? Just read this: [README_RU](README_RU.md)
+
 A brief installation guide:
 You can use either the portable or standalone version, it's up to you. But when you install PortableSource on your computer, PLEASE! Read these 3 simple points, which will save you a headache and me from useless issues:
 1. Never put IT in Downloads. 
