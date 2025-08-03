@@ -11,6 +11,16 @@ C:\Portablesource или C:\PS. НЕ СТАВЬТЕ НА САМ ДИСК! ВСЕ
 
 Надеюсь, эта памятка поможет вам сохранить ваше время и нервы!
 
+## Донаты
+bitcoin - bc1qqjat04ugt94eew3p920kdwdmtcs0w7hqkrhfqr (native segwt)
+
+eth - 0x42cF1F220E1C5eE040010E918C6222456b03a8bd 
+
+usdt (trc-20) - TAcYfCZh1UU6kifa5sJZfDakDPHZ7sv4bV
+
+usdt/usdc (bnb-20) - 0xF6B2FF95c015821aE369187eECAe6D1991d6D542
+
+
 ## Лицензия
 
 Copyright (c) 2025 PortableSource / NeuroDonu
