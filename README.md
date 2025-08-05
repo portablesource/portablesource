@@ -2,6 +2,8 @@
 
 Easy install ANY AI by few clicks.
 
+[![Crowdin](https://badges.crowdin.net/portablesource/localized.svg)](https://crowdin.com/project/portablesource)
+
 Speak russian? Just read this: [README_RU](README_RU.md)
 
 A brief installation guide:
