@@ -957,13 +957,22 @@
           </div>
           <div class="status-item">
             <span class="status-label">{$_('installation.overall_status')}</span>
-            <span class="status-value">{environmentStatus.overall_status}</span>
+            <span class="status-value">
+              {#if environmentStatus.overall_status === 'Environment not found'}
+                {$_('common.environment_not_found')}
+              {:else}
+                {environmentStatus.overall_status}
+              {/if}
+            </span>
           </div>
         </div>
         
         <div class="environment-actions">
           {#if isSettingUpEnvironment}
-            <p class="status">{installStatus}</p>
+            <div class="setup-progress">
+              <div class="spinner"></div>
+              <p class="status">{$_('installation.installing_environment')}</p>
+            </div>
           {:else if isCheckingEnvironment}
             <p class="status">{$_('installation.checking_environment')}</p>
           {:else}
@@ -2130,6 +2139,29 @@
       transform: translateY(0);
       opacity: 1;
     }
+  }
+
+  /* Setup Progress Styles */
+  .setup-progress {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    padding: 20px;
+  }
+
+  .setup-progress .spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid rgba(0, 122, 204, 0.3);
+    border-top: 3px solid #007acc;
+  }
+
+  .setup-progress .status {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 500;
+    color: #495057;
   }
 
   /* Update and Remove Button Spinner Styles */

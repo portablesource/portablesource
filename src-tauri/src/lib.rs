@@ -695,8 +695,8 @@ async fn get_latest_version_from_github() -> Result<String, String> {
         .map_err(|e| format!("Failed to fetch latest version: {}", e))?;
     
     if response.status() == 403 {
-        // GitHub API rate limit exceeded, return a fallback version
-        return Ok("0.1.2.post2".to_string());
+        // GitHub API rate limit exceeded, return error instead of fallback version
+        return Err("GitHub API rate limit exceeded. Cannot check for updates.".to_string());
     }
     
     if !response.status().is_success() {

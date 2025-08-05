@@ -32,6 +32,7 @@
     "check_status_again": "Проверить статус снова",
     "continue_to_repositories": "Перейти к репозиториям",
     "checking_environment": "Проверка статуса окружения...",
+    "installing_environment": "Установка окружения...",
     "environment_setup_first": "Сначала необходимо настроить окружение. Перейдите в настройки и нажмите \"Настроить окружение\".",
     "environment_setup_failed": "Ошибка настройки окружения: {error}",
     "environment_setup_error": "Ошибка настройки окружения: {error}",
@@ -91,6 +92,7 @@
     "success": "Успешно",
     "cancel": "Отмена",
     "confirm": "Подтвердить",
-    "unknown": "Неизвестно"
+    "unknown": "Неизвестно",
+    "environment_not_found": "Окружение не найдено"
   }
 }

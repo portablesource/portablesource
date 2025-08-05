@@ -32,6 +32,7 @@
     "check_status_again": "Check Status Again",
     "continue_to_repositories": "Continue to Repositories",
     "checking_environment": "Checking environment status...",
+    "installing_environment": "Installing environment...",
     "environment_setup_first": "Environment must be set up first. Go to settings and click \"Setup Environment\".",
     "environment_setup_failed": "Environment setup failed: {error}",
     "environment_setup_error": "Environment setup error: {error}",
@@ -91,6 +92,7 @@
     "success": "Success",
     "cancel": "Cancel",
     "confirm": "Confirm",
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "environment_not_found": "Environment not found"
   }
 }
