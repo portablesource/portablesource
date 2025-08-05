@@ -2,9 +2,9 @@
 
 Простейшая установка любых локальных нейросетей в пару кликов.
 
-[![Crowdin](https://badges.crowdin.net/portablesource/localized.svg)](https://crowdin.com/project/portablesource)****
+[![Crowdin](https://badges.crowdin.net/portablesource/localized.svg)](https://crowdin.com/project/portablesource)
 
-Небольшая инструкция к установке:
+### Небольшая инструкция к установке:
 Вы можете использовать как portable, так и standalone версии, это ваш выбор. Но когда вы устаналиваете PortableSource на свой компьютер, ПОЖАЛУЙСТА! Прочитайте вот эти 3 простых пункта, которые избавят вас от головной боли, а меня от бесполезных issues:
 1. Никогда не ставьте ЭТО в Downloads. 
 2. КРИТИЧЕСКИ ВАЖНО использовать корень диска! Например папку вида:
