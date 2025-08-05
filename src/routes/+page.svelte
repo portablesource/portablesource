@@ -1,8 +1,8 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
-  import { listen } from '@tauri-apps/api/event';
   import { open } from '@tauri-apps/plugin-dialog';
   import { onMount } from 'svelte';
+  import { _ } from 'svelte-i18n';
 
   // Installation flow state
   let currentStep = 'initial-check'; // 'initial-check', 'path-selection', 'installing', 'environment-setup', 'main-interface'
@@ -12,12 +12,17 @@
   let installTimer = 0;
   let installTimerInterval: number | null = null;
   let installProgress = 0;
-  let maxInstallTime = 20; // Maximum expected install time in seconds
+  let maxInstallTime = 1200; // Maximum expected install time in seconds
   
   // Main interface state
   let cliInstalled = false;
-  let cliOutput: string = '';
-  let cliCommand = '';
+  
+  // Version management state
+  let currentVersion = '';
+  let latestVersion = '';
+  let isCheckingVersions = false;
+  let updateAvailable = false;
+  let isUpdatingCli = false;
 
   let environmentStatus = {
     environment_exists: false,
@@ -69,6 +74,9 @@
       console.log('CLI found at:', installPath);
       cliInstalled = true;
       
+      // Check versions immediately after finding CLI
+      await checkVersions();
+      
       // Check environment status using CLI command
       await checkEnvironmentStatus();
       
@@ -95,7 +103,7 @@
       const selected = await open({
         directory: true,
         multiple: false,
-        title: 'Select folder for PortableSource installation'
+        title: $_('installation.select_folder')
       });
       
       if (selected) {
@@ -108,7 +116,7 @@
 
   async function savePathAndStartInstallation() {
     if (!installPath) {
-      installStatus = 'Please select installation path';
+      installStatus = $_('installation.select_installation_folder');
       return;
     }
 
@@ -129,7 +137,7 @@
     isInstalling = true;
     installTimer = 0;
     installProgress = 0;
-    installStatus = 'Installation in progress, please wait a moment';
+    installStatus = $_('common.loading');
     
     // Start timer and progress
     installTimerInterval = setInterval(() => {
@@ -138,7 +146,7 @@
       installProgress = Math.min((installTimer / maxInstallTime) * 100, 95); // Cap at 95% until completion
       
       if (installTimer >= 15 && isInstalling) {
-        installStatus = 'Please wait a little longer';
+        installStatus = $_('common.loading');
         maxInstallTime = 30; // Extend expected time for slow connections
       }
     }, 1000);
@@ -150,7 +158,7 @@
         if (cliInstalled) {
           await finishInstallation();
         } else {
-          installStatus = 'CLI installation check error';
+          installStatus = $_('common.error');
         }
       } else {
         installStatus = `Installation error: ${result.message}`;
@@ -192,6 +200,8 @@
       const result = await invoke('test_cli_installation', { installPath }) as {success: boolean, message?: string};
       if (result.success) {
         cliInstalled = true;
+        // Check versions after successful CLI test
+        await checkVersions();
       } else {
         cliInstalled = false;
         if (showError) {
@@ -203,6 +213,107 @@
         installStatus = `Testing error: ${error}`;
       }
       cliInstalled = false;
+    }
+  }
+
+  async function checkVersions() {
+    if (!installPath || !cliInstalled) return;
+    
+    isCheckingVersions = true;
+    try {
+      // Get current CLI version
+      currentVersion = await invoke('get_cli_version', { installPath });
+      
+      // Get latest version from GitHub
+      latestVersion = await invoke('get_latest_version_from_github');
+      
+      // Compare versions
+      updateAvailable = compareVersions(currentVersion, latestVersion) < 0;
+    } catch (error) {
+      console.error('Error checking versions:', error);
+      currentVersion = 'Unknown';
+      latestVersion = 'Unknown';
+      updateAvailable = false;
+    } finally {
+      isCheckingVersions = false;
+    }
+  }
+
+  function compareVersions(version1: string, version2: string): number {
+    // Parse version strings properly handling post/dev/rc suffixes
+    function parseVersion(version: string) {
+      // Remove 'v' prefix if present
+      let v = version.replace(/^v/, '');
+      
+      // Split by dots and handle suffixes like .post2, .dev1, .rc1
+      const parts = v.split('.');
+      const numbers = [];
+      
+      for (const part of parts) {
+        if (/^\d+$/.test(part)) {
+          // Pure number
+          numbers.push(parseInt(part));
+        } else if (/^\d+/.test(part)) {
+          // Number with suffix like "2post2"
+          const match = part.match(/^(\d+)(.*)$/);
+          if (match) {
+            numbers.push(parseInt(match[1]));
+            // Handle suffixes: post > rc > dev
+            const suffix = match[2];
+            if (suffix.startsWith('post')) {
+              const postNum = suffix.match(/post(\d+)/);
+              numbers.push(1000 + (postNum ? parseInt(postNum[1]) : 0));
+            } else if (suffix.startsWith('rc')) {
+              const rcNum = suffix.match(/rc(\d+)/);
+              numbers.push(500 + (rcNum ? parseInt(rcNum[1]) : 0));
+            } else if (suffix.startsWith('dev')) {
+              const devNum = suffix.match(/dev(\d+)/);
+              numbers.push(100 + (devNum ? parseInt(devNum[1]) : 0));
+            }
+          }
+        }
+      }
+      
+      return numbers;
+    }
+    
+    const v1 = parseVersion(version1);
+    const v2 = parseVersion(version2);
+    
+    const maxLength = Math.max(v1.length, v2.length);
+    
+    for (let i = 0; i < maxLength; i++) {
+      const num1 = v1[i] || 0;
+      const num2 = v2[i] || 0;
+      
+      if (num1 < num2) return -1;
+      if (num1 > num2) return 1;
+    }
+    
+    return 0;
+  }
+
+  async function updateCli() {
+    if (!installPath) return;
+    
+    isUpdatingCli = true;
+    try {
+      installStatus = $_('cli.updating');
+      
+      // Use the same download and install function
+      const result = await invoke('download_and_install_cli', { installPath }) as {success: boolean, message?: string};
+      
+      if (result.success) {
+        installStatus = $_('common.success');
+        await testCliInstallation();
+        await checkVersions(); // Refresh version info after update
+      } else {
+        installStatus = `Update failed: ${result.message}`;
+      }
+    } catch (error) {
+      installStatus = `Update error: ${error}`;
+    } finally {
+      isUpdatingCli = false;
     }
   }
 
@@ -259,7 +370,7 @@
       environmentStatus = {
         environment_exists: false,
         setup_completed: false,
-        overall_status: 'Check failed'
+        overall_status: $_('installation.check_failed')
       };
       return environmentStatus;
     } finally {
@@ -270,7 +381,7 @@
   async function setupEnvironment() {
     try {
       isSettingUpEnvironment = true;
-      installStatus = 'Setting up environment...';
+      installStatus = $_('installation.setup_environment');
       
       const result = await invoke('run_cli_command', { 
         installPath, 
@@ -278,7 +389,7 @@
       }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
       
       if (result.success) {
-        installStatus = 'Environment setup completed!';
+        installStatus = $_('common.success');
         const status = await checkEnvironmentStatus();
         
         if (status.setup_completed) {
@@ -286,10 +397,10 @@
           await loadEnvironmentAndRepos();
         }
       } else {
-        installStatus = `Environment setup failed: ${result.stderr || 'Unknown error'}`;
+        installStatus = $_('installation.environment_setup_failed', { values: { error: result.stderr || $_('repositories.unknown_error') } });
       }
     } catch (error) {
-      installStatus = `Environment setup error: ${error}`;
+      installStatus = $_('installation.environment_setup_error', { values: { error: String(error) } });
     } finally {
       isSettingUpEnvironment = false;
     }
@@ -387,7 +498,7 @@
       
       // Check if CLI is installed first
       if (!cliInstalled) {
-        installStatus = 'CLI must be installed first. Redirecting to settings...';
+        installStatus = $_('cli.not_installed');
         setTimeout(() => {
           setCurrentView('settings');
           sidebarOpen = false;
@@ -417,7 +528,7 @@
       };
       
       if (!envStatus.setup_completed) {
-        installStatus = 'Environment must be set up first. Go to settings and click "Setup Environment".';
+        installStatus = $_('installation.environment_setup_first');
         return;
       }
 
@@ -441,11 +552,11 @@
           setCurrentView('installed-repos');
         }, 3000);
       } else {
-        installStatus = `Installation error ${repoName}: ${result.stderr || result.stdout || 'Unknown error'}`;
+        installStatus = $_('repositories.installation_error', { values: { repoName, error: result.stderr || result.stdout || $_('repositories.unknown_error') } });
       }
     } catch (error) {
       console.error('Error during repository installation:', error);
-      installStatus = `Installation error ${repoName}: ${error}`;
+      installStatus = $_('repositories.installation_error', { values: { repoName, error: String(error) } });
     } finally {
       isInstallingRepo = false;
       installingRepoName = '';
@@ -491,13 +602,13 @@
       console.log('Result:', result);
       
       if (result.success) {
-        installStatus = `${repoName} started in new console window!`;
+        installStatus = $_('repositories.started_success', { values: { repoName } });
       } else {
-        installStatus = `Start error ${repoName}: ${result.stderr || result.stdout || 'Unknown error'}`;
+        installStatus = $_('repositories.start_error', { values: { repoName, error: result.stderr || result.stdout || $_('repositories.unknown_error') } });
       }
     } catch (error) {
       console.error('Error in runRepo:', error);
-      installStatus = `Start error ${repoName}: ${error}`;
+      installStatus = $_('repositories.start_error', { values: { repoName, error: String(error) } });
     }
   }
 
@@ -514,12 +625,12 @@
       }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
       
       if (result.success) {
-        installStatus = `${repoName} updated!`;
+        installStatus = $_('repositories.updated_success', { values: { repoName } });
       } else {
-        installStatus = `Update error ${repoName}: ${result.stderr || 'Unknown error'}`;
+        installStatus = $_('repositories.update_error', { values: { repoName, error: result.stderr || $_('repositories.unknown_error') } });
       }
     } catch (error) {
-      installStatus = `Update error ${repoName}: ${error}`;
+      installStatus = $_('repositories.update_error', { values: { repoName, error: String(error) } });
     } finally {
       isUpdatingRepo = false;
       updatingRepoName = '';
@@ -532,29 +643,19 @@
       removingRepoName = repoName;
       installStatus = `Removing ${repoName}...`;
       
-      // Remove repository folders from envs and repos
-      const envsPath = `${installPath}\\envs\\${repoName}`;
-      const reposPath = `${installPath}\\repos\\${repoName}`;
-      
-      // Remove folder from envs
-      const envResult = await invoke('run_command', {
-        command: `Remove-Item -Path "${envsPath}" -Recurse -Force -ErrorAction SilentlyContinue`,
-        working_dir: installPath
-      }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
-      
-      // Remove folder from repos
-      const repoResult = await invoke('run_command', {
-        command: `Remove-Item -Path "${reposPath}" -Recurse -Force -ErrorAction SilentlyContinue`,
-        working_dir: installPath
-      }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
+      // Use CLI command to delete repository
+      const result = await invoke('delete_repository', {
+        install_path: installPath,
+        repo_name: repoName
+      }) as {success: boolean, message: string};
       
       // Update installed repositories list
       await loadInstalledRepos();
       
-      if (envResult.success && repoResult.success) {
+      if (result.success) {
         installStatus = `${repoName} removed!`;
       } else {
-        installStatus = `Partial removal of ${repoName} - check manually`;
+        installStatus = `Removal error: ${result.message}`;
       }
     } catch (error) {
       installStatus = `Removal error ${repoName}: ${error}`;
@@ -579,7 +680,7 @@
 
   async function removeAllRepos() {
     try {
-      installStatus = 'Removing all repositories...';
+      installStatus = $_('repositories.removing');
       
       // Remove all folders from envs
       const envResult = await invoke('run_command', {
@@ -597,9 +698,9 @@
       await loadInstalledRepos();
       
       if (envResult.success && repoResult.success) {
-        installStatus = 'All repositories successfully removed!';
+        installStatus = $_('common.success');
       } else {
-        installStatus = 'Partial removal completed - check manually';
+        installStatus = $_('common.error');
       }
     } catch (error) {
       installStatus = `Repository removal error: ${error}`;
@@ -609,7 +710,7 @@
   async function removeSelectedRepo() {
     try {
       if (installedRepos.length === 0) {
-        installStatus = 'No installed repositories to remove';
+        installStatus = $_('repositories.no_installed');
         return;
       }
       
@@ -620,7 +721,7 @@
       const userChoice = prompt(`Select repository to remove:\n\n${repoList}\n\nEnter repository number (1-${installedRepos.length}):`);
       
       if (!userChoice) {
-        installStatus = 'Removal cancelled';
+        installStatus = $_('common.cancel');
         return;
       }
       
@@ -630,18 +731,73 @@
         const repoToRemove = installedRepos[selectedIndex].name;
         
         // Confirm deletion
-        const confirmDelete = confirm(`Are you sure you want to remove repository "${repoToRemove}"?\n\nThis action cannot be undone.`);
+        const confirmDelete = confirm($_('repositories.confirm_remove', { values: { name: repoToRemove } }));
         
         if (confirmDelete) {
           await removeRepo(repoToRemove);
         } else {
-          installStatus = 'Removal cancelled';
+          installStatus = $_('common.cancel');
         }
       } else {
-        installStatus = 'Invalid repository number';
+        installStatus = $_('common.error');
       }
     } catch (error) {
       installStatus = `Repository removal error: ${error}`;
+    }
+  }
+
+  async function completeUninstall() {
+    try {
+      // Confirm complete uninstallation
+      const confirmUninstall = confirm($_('settings.confirm_uninstall'));
+      
+      if (!confirmUninstall) {
+        installStatus = $_('common.cancel');
+        return;
+      }
+      
+      // Second confirmation
+      const finalConfirm = confirm(
+        'Final warning!\n\n' +
+        'All your data will be permanently deleted.\n' +
+        'Continue with complete uninstall?'
+      );
+      
+      if (!finalConfirm) {
+        installStatus = $_('common.cancel');
+        return;
+      }
+      
+      installStatus = $_('common.loading');
+      
+      const result = await invoke('complete_uninstall') as {success: boolean, message: string};
+      
+      if (result.success) {
+        installStatus = result.message;
+        // Reset all state
+        installPath = '';
+        cliInstalled = false;
+        installedRepos = [];
+        availableRepos = [];
+        environmentStatus = {
+          environment_exists: false,
+          setup_completed: false,
+          overall_status: 'Unknown'
+        };
+        currentStep = 'path-selection';
+        
+        // Show success message for a few seconds, then close app
+        setTimeout(() => {
+          // Try to close the application
+          if (window.__TAURI__) {
+            window.__TAURI__.process.exit(0);
+          }
+        }, 3000);
+      } else {
+        installStatus = `Uninstall error: ${result.message}`;
+      }
+    } catch (error) {
+      installStatus = `Complete uninstall error: ${error}`;
     }
   }
 </script>
@@ -660,7 +816,7 @@
   {#if currentStep === 'main-interface'}
     <div class="sidebar" class:open={sidebarOpen}>
     <div class="sidebar-content">
-      <h3>PortableSource</h3>
+      <h3>{$_('app.title')}</h3>
       
       <!-- Navigation -->
       <div class="nav-section">
@@ -669,14 +825,14 @@
           class:active={currentView === 'top-repos'}
           on:click={() => { setCurrentView('top-repos'); sidebarOpen = false; }}
         >
-          🔥 Top Repositories
+          🔥 {$_('repositories.top_repositories')}
         </button>
         <button 
           class="nav-item" 
           class:active={currentView === 'installed-repos'}
           on:click={() => { setCurrentView('installed-repos'); sidebarOpen = false; }}
         >
-          📦 Installed
+          📦 {$_('navigation.installed')}
         </button>
       </div>
       
@@ -687,7 +843,7 @@
           class:active={currentView === 'settings'}
           on:click={() => { setCurrentView('settings'); sidebarOpen = false; }}
         >
-          ⚙️ Settings
+          ⚙️ {$_('navigation.settings')}
         </button>
       </div>
     </div>
@@ -715,12 +871,12 @@
     <!-- Initial Check Step -->
     {#if currentStep === 'initial-check'}
       <div class="step-container environment-step">
-        <h1 class="step-title">PortableSource</h1>
-        <p class="step-description">Checking your installation...</p>
+        <h1 class="step-title">{$_('app.title')}</h1>
+        <p class="step-description">{$_('installation.checking_installation')}</p>
         
         <div class="installation-progress">
           <div class="spinner"></div>
-          <p class="installation-text">Performing initial checks...</p>
+          <p class="installation-text">{$_('installation.performing_checks')}</p>
         </div>
       </div>
     {/if}
@@ -728,18 +884,18 @@
     <!-- Step 1: Path Selection -->
     {#if currentStep === 'path-selection'}
       <div class="step-container">
-        <h1 class="step-title">PortableSource Installer</h1>
-        <p class="step-description">Select folder for PortableSource installation</p>
+        <h1 class="step-title">{$_('app.installer_title')}</h1>
+        <p class="step-description">{$_('installation.select_folder')}</p>
         
         <div class="path-input-container">
           <input 
             type="text" 
             bind:value={installPath} 
-            placeholder="Select installation folder"
+            placeholder="{$_('installation.select_installation_folder')}"
             readonly
           />
           <button on:click={selectInstallPath}>
-            Select Folder
+            {$_('installation.select_folder_btn')}
           </button>
         </div>
         
@@ -749,7 +905,7 @@
             on:click={savePathAndStartInstallation}
             disabled={!installPath}
           >
-            Confirm and Start Installation
+            {$_('installation.confirm_start')}
           </button>
         {/if}
         
@@ -762,11 +918,11 @@
     <!-- Step 2: Installation Progress -->
     {#if currentStep === 'installing'}
       <div class="step-container installation-step">
-        <h2>Installing PortableSource CLI</h2>
+        <h2>{$_('installation.installing_cli')}</h2>
         <div class="installation-progress">
           <div class="spinner"></div>
           <p class="installation-text">{installStatus}</p>
-          <p class="timer">Time elapsed: {installTimer} sec</p>
+          <p class="timer">{$_('installation.time_elapsed', { values: { time: installTimer } })}</p>
           
           <!-- Progress Bar -->
           <div class="progress-container">
@@ -782,25 +938,25 @@
     <!-- Step 3: Environment Setup -->
     {#if currentStep === 'environment-setup'}
       <div class="step-container environment-step">
-        <h1 class="step-title">Environment Setup Required</h1>
-        <p class="step-description">PortableSource CLI is installed, but the environment needs to be set up.</p>
+        <h1 class="step-title">{$_('installation.environment_setup_required')}</h1>
+        <p class="step-description">{$_('installation.cli_installed_env_needed')}</p>
         
         <div class="environment-status">
-          <h3>Current Status:</h3>
+          <h3>{$_('installation.current_status')}</h3>
           <div class="status-item">
-            <span class="status-label">Environment exists:</span>
+            <span class="status-label">{$_('installation.environment_exists')}</span>
             <span class="status-value {environmentStatus.environment_exists ? 'success' : 'error'}">
               {environmentStatus.environment_exists ? '✅' : '❌'}
             </span>
           </div>
           <div class="status-item">
-            <span class="status-label">Setup completed:</span>
+            <span class="status-label">{$_('installation.setup_completed')}</span>
             <span class="status-value {environmentStatus.setup_completed ? 'success' : 'error'}">
-              {environmentStatus.setup_completed ? 'YES' : 'NO'}
+              {environmentStatus.setup_completed ? $_('installation.yes') : $_('installation.no')}
             </span>
           </div>
           <div class="status-item">
-            <span class="status-label">Overall status:</span>
+            <span class="status-label">{$_('installation.overall_status')}</span>
             <span class="status-value">{environmentStatus.overall_status}</span>
           </div>
         </div>
@@ -809,21 +965,21 @@
           {#if isSettingUpEnvironment}
             <p class="status">{installStatus}</p>
           {:else if isCheckingEnvironment}
-            <p class="status">Checking environment status...</p>
+            <p class="status">{$_('installation.checking_environment')}</p>
           {:else}
             <button 
               class="setup-env-button" 
               on:click={setupEnvironment}
               disabled={environmentStatus.setup_completed}
             >
-              {environmentStatus.setup_completed ? '✓ Environment Ready' : 'Setup Environment'}
+              {environmentStatus.setup_completed ? $_('installation.environment_ready') : $_('installation.setup_environment')}
             </button>
             
             <button 
               class="check-env-button" 
               on:click={checkEnvironmentStatus}
             >
-              Check Status Again
+              {$_('installation.check_status_again')}
             </button>
             
             {#if environmentStatus.setup_completed}
@@ -831,7 +987,7 @@
                 class="continue-button" 
                 on:click={() => { currentStep = 'main-interface'; loadEnvironmentAndRepos(); }}
               >
-                Continue to Repositories
+                {$_('installation.continue_to_repositories')}
               </button>
             {/if}
           {/if}
@@ -846,7 +1002,7 @@
         <div class="install-notification">
           <div class="notification-content">
             <span class="notification-icon">✅</span>
-            <span class="notification-text">Repository "{installedRepoName}" successfully installed!</span>
+            <span class="notification-text">{$_('repositories.successfully_installed', { values: { name: installedRepoName } })}</span>
             <button class="notification-close" on:click={() => showInstallNotification = false}>×</button>
           </div>
         </div>
@@ -855,11 +1011,11 @@
       <div class="content-header">
         <h1>
           {#if currentView === 'top-repos'}
-            🔥 Top Repositories
+            🔥 {$_('repositories.top_repositories')}
           {:else if currentView === 'installed-repos'}
-            📦 Installed Repositories
+            📦 {$_('repositories.installed_repositories')}
           {:else if currentView === 'settings'}
-            ⚙️ Settings
+            ⚙️ {$_('navigation.settings')}
           {/if}
         </h1>
       </div>
@@ -873,39 +1029,39 @@
                <p>{repo.description}</p>
                {#if repo.downloadCount}
                  <div class="repo-stats">
-                   <span class="download-count">📥 {repo.downloadCount} downloads</span>
+                   <span class="download-count">📥 {$_('repositories.downloads', { values: { count: repo.downloadCount } })}</span>
                    {#if repo.uploadedByUsername}
                      <span class="author">👤 {repo.uploadedByUsername}</span>
                    {/if}
                  </div>
                {/if}
                {#await checkRepoInstallStatus(repo.name)}
-                 <button class="install-repo-btn" disabled>Checking...</button>
+                 <button class="install-repo-btn" disabled>{$_('repositories.checking')}</button>
                {:then isInstalled}
                  {#if isInstalled}
                    <button class="open-repo-btn" on:click={() => setCurrentView('installed-repos')}>
-                     Open
+                     {$_('repositories.open')}
                    </button>
                  {:else if isInstallingRepo && installingRepoName === repo.name}
                    <button class="install-repo-btn installing" disabled>
                      <span class="spinner"></span>
-                     Installing...
+                     {$_('repositories.installing')}
                    </button>
                  {:else}
                    <button class="install-repo-btn" on:click={() => {
                      installRepo(repo.name);
-                   }} disabled={isInstallingRepo}>Install</button>
+                   }} disabled={isInstallingRepo}>{$_('repositories.install')}</button>
                  {/if}
                {:catch}
                  {#if isInstallingRepo && installingRepoName === repo.name}
                    <button class="install-repo-btn installing" disabled>
                      <span class="spinner"></span>
-                     Installing...
+                     {$_('repositories.installing')}
                    </button>
                  {:else}
                    <button class="install-repo-btn" on:click={() => {
                      installRepo(repo.name);
-                   }} disabled={isInstallingRepo}>Install</button>
+                   }} disabled={isInstallingRepo}>{$_('repositories.install')}</button>
                  {/if}
                {/await}
              </div>
@@ -928,8 +1084,8 @@
         <div class="installed-repos">
           {#if installedRepos.length === 0}
             <div class="empty-state">
-              <p>No installed repositories yet</p>
-              <button on:click={() => setCurrentView('top-repos')}>View top repositories</button>
+              <p>{$_('repositories.no_installed')}</p>
+              <button on:click={() => setCurrentView('top-repos')}>{$_('repositories.view_top_repositories')}</button>
             </div>
           {:else}
             <div class="repos-list">
@@ -938,23 +1094,23 @@
                   <h3>{repo.name}</h3>
                   <div class="repo-actions">
                     {#if repo.hasLauncher}
-                      <button class="launch-btn" on:click={() => runRepo(repo.name)}>Launch</button>
+                      <button class="launch-btn" on:click={() => runRepo(repo.name)}>{$_('repositories.launch')}</button>
                     {/if}
                     {#if isUpdatingRepo && updatingRepoName === repo.name}
                       <button class="update-btn updating" disabled>
                         <span class="spinner"></span>
-                        Updating...
+                        {$_('repositories.updating')}
                       </button>
                     {:else}
-                      <button class="update-btn" on:click={() => updateRepo(repo.name)} disabled={isUpdatingRepo || isRemovingRepo}>Update</button>
+                      <button class="update-btn" on:click={() => updateRepo(repo.name)} disabled={isUpdatingRepo || isRemovingRepo}>{$_('repositories.update')}</button>
                     {/if}
                     {#if isRemovingRepo && removingRepoName === repo.name}
                       <button class="remove-btn removing" disabled>
                         <span class="spinner"></span>
-                        Removing...
+                        {$_('repositories.removing')}
                       </button>
                     {:else}
-                      <button class="remove-btn" on:click={() => removeRepo(repo.name)} disabled={isUpdatingRepo || isRemovingRepo}>Remove</button>
+                      <button class="remove-btn" on:click={() => removeRepo(repo.name)} disabled={isUpdatingRepo || isRemovingRepo}>{$_('repositories.remove')}</button>
                     {/if}
                   </div>
                 </div>
@@ -968,38 +1124,67 @@
       {#if currentView === 'settings'}
         <div class="settings-content">
           <div class="settings-section">
-            <h2>Installation Path</h2>
+            <h2>{$_('settings.installation_path')}</h2>
             <div class="path-selector">
               <input 
                 type="text" 
                 bind:value={installPath} 
-                placeholder="Select installation folder"
+                placeholder="{$_('installation.select_installation_folder')}"
                 readonly
               />
               <button on:click={selectInstallPath} disabled={isInstalling}>
-                Change
+                {$_('settings.change')}
               </button>
             </div>
           </div>
 
           <div class="settings-section">
-            <h2>CLI Status</h2>
+            <h2>{$_('cli.status')}</h2>
             {#if cliInstalled}
-              <p class="success">✓ CLI installed and working</p>
+              <p class="success">✓ {$_('cli.installed_working')}</p>
+              {#if isCheckingVersions}
+                <p class="info">{$_('cli.checking_versions')}</p>
+              {:else if !updateAvailable && currentVersion && currentVersion !== 'Unknown'}
+                <p class="success">✓ {$_('cli.latest_version')}</p>
+              {:else}
+                <p class="version-info">{$_('cli.current_version', { values: { version: currentVersion || $_('common.unknown') } })}</p>
+                {#if updateAvailable && latestVersion}
+                  <p class="update-available">⚠️ {$_('cli.update_available', { values: { version: latestVersion } })}</p>
+                {/if}
+              {/if}
               <div class="action-buttons">
-                <button on:click={() => testCliInstallation(true)}>Check again</button>
-                <button class="reset-btn" on:click={resetInstallation}>Reinstall</button>
+                <button on:click={() => testCliInstallation(true)} disabled={isInstalling || isUpdatingCli}>{$_('cli.check_again')}</button>
+                {#if isUpdatingCli}
+                  <button class="update-btn updating" disabled>
+                    <span class="spinner"></span>
+                    {$_('cli.updating')}
+                  </button>
+                {:else}
+                  <button class="update-btn" on:click={updateCli} disabled={isInstalling}>{$_('cli.update')}</button>
+                {/if}
               </div>
             {:else}
-              <p class="warning">CLI not installed</p>
-              <button class="install-cli-btn" on:click={savePathAndStartInstallation}>Install CLI</button>
+              <p class="warning">{$_('cli.not_installed')}</p>
+              <button class="install-cli-btn" on:click={savePathAndStartInstallation}>{$_('cli.install_cli')}</button>
             {/if}
           </div>
            <div class="settings-section">
-              <h2>Repository Management</h2>
+              <h2>{$_('repositories.repository_management')}</h2>
               <div class="action-buttons">
-                <button class="reset-btn" on:click={removeAllRepos}>Remove All</button>
-                <button class="reset-btn" on:click={removeSelectedRepo}>Remove Selected</button>
+                <button class="reset-btn" on:click={removeAllRepos}>{$_('repositories.remove_all')}</button>
+                <button class="reset-btn" on:click={removeSelectedRepo}>{$_('repositories.remove_selected')}</button>
+              </div>
+            </div>
+
+            <div class="settings-section danger-section">
+              <h2>⚠️ {$_('settings.danger_zone')}</h2>
+              <p class="danger-warning">
+                {$_('settings.danger_warning')}
+              </p>
+              <div class="action-buttons">
+                <button class="danger-btn" on:click={completeUninstall}>
+                  🗑️ {$_('settings.complete_uninstall')}
+                </button>
               </div>
             </div>
         </div>
@@ -1546,6 +1731,44 @@
     background: #c82333 !important;
   }
 
+  /* Danger Zone Styles */
+  .danger-section {
+    border: 2px solid #dc3545 !important;
+    background: linear-gradient(135deg, #fff5f5 0%, #ffe6e6 100%) !important;
+  }
+
+  .danger-section h2 {
+    color: #dc3545 !important;
+    font-weight: 700;
+  }
+
+  .danger-warning {
+    color: #721c24;
+    font-weight: 500;
+    margin: 15px 0;
+    padding: 15px;
+    background: rgba(220, 53, 69, 0.1);
+    border-radius: 8px;
+    border-left: 4px solid #dc3545;
+  }
+
+  .danger-btn {
+    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%) !important;
+    color: white !important;
+    border: 2px solid #dc3545 !important;
+    font-weight: 600 !important;
+    font-size: 16px !important;
+    padding: 12px 24px !important;
+    transition: all 0.3s ease !important;
+  }
+
+  .danger-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%) !important;
+    border-color: #a71e2a !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 20px rgba(220, 53, 69, 0.4) !important;
+  }
+
   .install-cli-btn {
     background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
     color: white;
@@ -1927,5 +2150,47 @@
   .remove-btn.removing .spinner {
     border: 2px solid rgba(255, 255, 255, 0.3);
     border-top: 2px solid white;
+  }
+
+  /* Version management styles */
+  .version-info {
+    color: #495057;
+    font-size: 14px;
+    margin: 8px 0;
+    font-weight: 500;
+  }
+
+  .update-available {
+    color: #fd7e14;
+    font-size: 14px;
+    margin: 8px 0;
+    font-weight: 600;
+  }
+
+  .info {
+    color: #17a2b8;
+    font-size: 14px;
+    margin: 8px 0;
+    font-style: italic;
+  }
+
+  .update-btn {
+    background: linear-gradient(135deg, #fd7e14 0%, #e55a00 100%);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s ease;
+  }
+
+  .update-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(253, 126, 20, 0.3);
+  }
+
+  .update-btn:active {
+    transform: translateY(0);
   }
 </style>

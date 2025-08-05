@@ -8,6 +8,16 @@ declare global {
 		// interface PageState {}
 		// interface Platform {}
 	}
+
+	// Tauri API types
+	interface Window {
+		__TAURI__?: {
+			process: {
+				exit(code?: number): Promise<void>;
+			};
+			// Add other Tauri APIs as needed
+		};
+	}
 }
 
 export {};

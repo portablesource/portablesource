@@ -588,6 +588,248 @@ async fn clear_install_path() -> Result<InstallResult, String> {
     }
 }
 
+#[tauri::command]
+async fn delete_repository(install_path: String, repo_name: Option<String>) -> Result<InstallResult, String> {
+    let exe_path = Path::new(&install_path).join("portablesource_main.exe");
+    
+    if !exe_path.exists() {
+        return Ok(InstallResult {
+            success: false,
+            message: "CLI executable not found".to_string(),
+        });
+    }
+    
+    let mut cmd = Command::new(&exe_path);
+    
+    // If repo_name is provided, delete specific repository
+    // If repo_name is None, delete all repositories (existing logic)
+    let repo_name_for_message = repo_name.clone();
+    if let Some(repo) = repo_name {
+        cmd.args(["--delete-repo", &repo]);
+    } else {
+        // For deleting all repositories, we'll use the existing logic
+        // This could be implemented as multiple --delete-repo calls or a different CLI flag
+        // For now, return an error to indicate this should use the old method
+        return Ok(InstallResult {
+            success: false,
+            message: "Use removeAllRepos function for deleting all repositories".to_string(),
+        });
+    }
+    
+    cmd.current_dir(&install_path);
+    
+    // Hide console window on Windows
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    
+    let output = cmd.output()
+        .map_err(|e| format!("Failed to run CLI delete command: {}", e))?;
+    
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    
+    if output.status.success() {
+        Ok(InstallResult {
+            success: true,
+            message: format!("Repository '{}' deleted successfully", repo_name_for_message.unwrap_or_default()),
+        })
+    } else {
+        Ok(InstallResult {
+            success: false,
+            message: format!("Failed to delete repository: {}\n{}", stderr, stdout),
+        })
+    }
+}
+
+#[tauri::command]
+async fn get_cli_version(install_path: String) -> Result<String, String> {
+    let exe_path = Path::new(&install_path).join("portablesource_main.exe");
+    
+    if !exe_path.exists() {
+        return Err("CLI executable not found".to_string());
+    }
+    
+    let mut cmd = Command::new(&exe_path);
+    cmd.arg("--version");
+    
+    // Hide console window on Windows
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    
+    let output = cmd.output()
+        .map_err(|e| format!("Failed to get CLI version: {}", e))?;
+    
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        
+        // Extract version after "PortableSource version: "
+        for line in stdout.lines() {
+            let line = line.trim();
+            if line.contains("PortableSource version:") {
+                if let Some(version_part) = line.split("PortableSource version:").nth(1) {
+                    let version = version_part.trim();
+                    if !version.is_empty() {
+                        return Ok(version.to_string());
+                    }
+                }
+            }
+        }
+        
+        Err(format!("Could not parse version from CLI output: {}", stdout.trim()))
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("CLI version command failed: {}", stderr))
+    }
+}
+
+#[tauri::command]
+async fn get_latest_version_from_github() -> Result<String, String> {
+    let url = "https://api.github.com/repos/portablesource/portablesource-cli/releases/latest";
+    
+    let client = reqwest::Client::new();
+    let response = client
+        .get(url)
+        .header("User-Agent", "PortableSource-App/1.0")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch latest version: {}", e))?;
+    
+    if response.status() == 403 {
+        // GitHub API rate limit exceeded, return a fallback version
+        return Ok("0.1.2.post2".to_string());
+    }
+    
+    if !response.status().is_success() {
+        return Err(format!("GitHub API request failed with status: {}", response.status()));
+    }
+    
+    let json: serde_json::Value = response.json()
+        .await
+        .map_err(|e| format!("Failed to parse GitHub API response: {}", e))?;
+    
+    if let Some(tag_name) = json["tag_name"].as_str() {
+        // Remove 'v' prefix if present
+        let version = tag_name.strip_prefix('v').unwrap_or(tag_name);
+        Ok(version.to_string())
+    } else {
+        Err("Could not find tag_name in GitHub API response".to_string())
+    }
+}
+
+#[tauri::command]
+async fn get_system_locale() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use winreg::enums::*;
+        use winreg::RegKey;
+        
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        
+        // Try to get locale from Control Panel\International
+        if let Ok(intl_key) = hkcu.open_subkey("Control Panel\\International") {
+            if let Ok(locale_name) = intl_key.get_value::<String, _>("LocaleName") {
+                // Convert Windows locale format to standard format
+                let locale = locale_name.replace("-", "_").to_lowercase();
+                
+                // Map common locales to our supported ones
+                if locale.starts_with("ru") {
+                    return Ok("ru".to_string());
+                } else {
+                    return Ok("en".to_string());
+                }
+            }
+        }
+        
+        // Fallback: try to get from user default locale
+        if let Ok(intl_key) = hkcu.open_subkey("Control Panel\\International") {
+            if let Ok(locale) = intl_key.get_value::<String, _>("Locale") {
+                // Russian locale codes
+                if locale == "00000419" || locale == "0419" {
+                    return Ok("ru".to_string());
+                }
+            }
+        }
+        
+        // Default to English
+        Ok("en".to_string())
+    }
+    
+    #[cfg(not(target_os = "windows"))]
+    {
+        // For non-Windows systems, default to English
+        Ok("en".to_string())
+    }
+}
+
+#[tauri::command]
+async fn complete_uninstall() -> Result<InstallResult, String> {
+    // First, get the install path
+    let install_path = match get_install_path().await {
+        Ok(path) => path,
+        Err(_) => {
+            return Ok(InstallResult {
+                success: false,
+                message: "Installation path not found in registry".to_string(),
+            });
+        }
+    };
+    
+    let install_dir = Path::new(&install_path);
+    let exe_path = install_dir.join("portablesource_main.exe");
+    
+    // Step 1: Run CLI with --unregister if executable exists
+    if exe_path.exists() {
+        let mut cmd = Command::new(&exe_path);
+        cmd.arg("--unregister");
+        
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        
+        match cmd.output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    eprintln!("CLI unregister warning: {}", stderr);
+                    // Continue with deletion even if unregister fails
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run CLI unregister: {}", e);
+                // Continue with deletion even if unregister fails
+            }
+        }
+    }
+    
+    // Step 2: Remove the entire installation directory
+    if install_dir.exists() {
+        match fs::remove_dir_all(&install_dir) {
+            Ok(_) => {
+                // Step 3: Clear registry entry
+                let _ = clear_install_path().await;
+                
+                Ok(InstallResult {
+                    success: true,
+                    message: "Thank you for using this software! =}".to_string(),
+                })
+            }
+            Err(e) => {
+                Ok(InstallResult {
+                    success: false,
+                    message: format!("Failed to remove installation directory: {}", e),
+                })
+            }
+        }
+    } else {
+        // Directory doesn't exist, just clear registry
+        let _ = clear_install_path().await;
+        
+        Ok(InstallResult {
+            success: true,
+            message: "Thank you for using this software! =}".to_string(),
+        })
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -611,6 +853,8 @@ pub fn run() {
             run_cli_command,
             proxy_request,
             clear_install_path,
+            delete_repository,
+            complete_uninstall,
             check_environment_installed,
             check_environment_status,
             check_repository_installed,
@@ -618,7 +862,10 @@ pub fn run() {
             run_command,
             run_command_stream,
             run_cli_command_stream,
-            run_batch_in_new_window
+            run_batch_in_new_window,
+            get_cli_version,
+            get_latest_version_from_github,
+            get_system_locale
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
