@@ -717,6 +717,58 @@ async fn get_latest_version_from_github() -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn check_for_updates(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    
+    match app_handle.updater() {
+        Ok(updater) => {
+            match updater.check().await {
+                Ok(update) => {
+                    if let Some(update) = update {
+                        Ok(serde_json::json!({
+                            "available": true,
+                            "version": update.version,
+                            "date": update.date.map(|d| d.to_string()),
+                            "body": update.body
+                        }))
+                    } else {
+                        Ok(serde_json::json!({
+                            "available": false
+                        }))
+                    }
+                },
+                Err(e) => Err(format!("Failed to check for updates: {}", e))
+            }
+        },
+        Err(e) => Err(format!("Updater not available: {}", e))
+    }
+}
+
+#[tauri::command]
+async fn install_update(app_handle: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    
+    match app_handle.updater() {
+        Ok(updater) => {
+            match updater.check().await {
+                Ok(update) => {
+                    if let Some(update) = update {
+                        match update.download_and_install(|_chunk_length, _content_length| {}, || {}).await {
+                            Ok(_) => Ok(()),
+                            Err(e) => Err(format!("Failed to install update: {}", e))
+                        }
+                    } else {
+                        Err("No update available".to_string())
+                    }
+                },
+                Err(e) => Err(format!("Failed to check for updates: {}", e))
+            }
+        },
+        Err(e) => Err(format!("Updater not available: {}", e))
+    }
+}
+
+#[tauri::command]
 async fn get_system_locale() -> Result<String, String> {
     #[cfg(target_os = "windows")]
     {
@@ -759,6 +811,11 @@ async fn get_system_locale() -> Result<String, String> {
         // For non-Windows systems, default to English
         Ok("en".to_string())
     }
+}
+
+#[tauri::command]
+fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
 }
 
 #[tauri::command]
@@ -842,6 +899,7 @@ pub fn run() {
                 )?;
             }
             app.handle().plugin(tauri_plugin_dialog::init())?;
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -865,7 +923,10 @@ pub fn run() {
             run_batch_in_new_window,
             get_cli_version,
             get_latest_version_from_github,
-            get_system_locale
+            get_system_locale,
+            get_app_version,
+            check_for_updates,
+            install_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

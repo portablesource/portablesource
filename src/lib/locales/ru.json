@@ -94,5 +94,21 @@
     "confirm": "Подтвердить",
     "unknown": "Неизвестно",
     "environment_not_found": "Окружение не найдено"
+  },
+  "updater": {
+    "check_for_updates": "Проверить обновления",
+    "checking_updates": "Проверка обновлений...",
+    "update_available": "Доступно обновление",
+    "no_updates": "Обновления не найдены",
+    "current_version": "Текущая версия: {version}",
+    "new_version": "Новая версия: {version}",
+    "install_update": "Установить обновление",
+    "installing_update": "Установка обновления...",
+    "update_installed": "Обновление установлено",
+    "update_failed": "Ошибка обновления: {error}",
+    "restart_required": "Требуется перезапуск приложения",
+    "release_notes": "Примечания к выпуску",
+    "version_latest": "✓ У вас последняя версия: v{version}",
+    "version_outdated": "✗ Версия не последняя! Желательно обновить"
   }
 }

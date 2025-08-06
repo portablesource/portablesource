@@ -2,7 +2,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
   import { onMount } from 'svelte';
-  import { _ } from 'svelte-i18n';
+  import { _, locale } from 'svelte-i18n';
 
   // Installation flow state
   let currentStep = 'initial-check'; // 'initial-check', 'path-selection', 'installing', 'environment-setup', 'main-interface'
@@ -23,6 +23,12 @@
   let isCheckingVersions = false;
   let updateAvailable = false;
   let isUpdatingCli = false;
+
+  // App updater state
+  let currentAppVersion = ''; // Will be loaded from Tauri
+  let isCheckingUpdates = false;
+  let isInstallingUpdate = false;
+  let updateInfo: any = null;
 
   let environmentStatus = {
     environment_exists: false,
@@ -64,8 +70,18 @@
   export const host = "portables.dev";
 
   onMount(async () => {
+    await loadAppVersion();
     await performInitialCheck();
   });
+
+  async function loadAppVersion() {
+    try {
+      currentAppVersion = await invoke('get_app_version');
+    } catch (error) {
+      console.error('Failed to load app version:', error);
+      currentAppVersion = '0.0.4'; // Fallback version
+    }
+  }
 
   async function performInitialCheck() {
     try {
@@ -800,6 +816,42 @@
       installStatus = `Complete uninstall error: ${error}`;
     }
   }
+
+  // App updater functions
+  async function checkForUpdates() {
+    try {
+      isCheckingUpdates = true;
+      updateInfo = null;
+      
+      const result = await invoke('check_for_updates');
+      updateInfo = result;
+      
+    } catch (error) {
+      console.error('Failed to check for updates:', error);
+      updateInfo = { available: false, error: String(error) };
+    } finally {
+      isCheckingUpdates = false;
+    }
+  }
+
+  async function installUpdate() {
+    try {
+      isInstallingUpdate = true;
+      
+      await invoke('install_update');
+      
+      // Show success message
+      alert($_('updater.update_installed') + '\n' + $_('updater.restart_required'));
+      
+      // The app should restart automatically after update
+      
+    } catch (error) {
+      console.error('Failed to install update:', error);
+      alert($_('updater.update_failed', { values: { error: String(error) } }));
+    } finally {
+      isInstallingUpdate = false;
+    }
+  }
 </script>
 
 <main>
@@ -1177,6 +1229,73 @@
               <button class="install-cli-btn" on:click={savePathAndStartInstallation}>{$_('cli.install_cli')}</button>
             {/if}
           </div>
+
+          <div class="settings-section">
+            <h2>🔄 {$_('updater.check_for_updates')}</h2>
+            
+            <!-- Version Status Display -->
+            {#if currentAppVersion}
+              {#if isCheckingUpdates}
+                <p class="info">{$_('updater.checking_updates')}</p>
+              {:else if updateInfo && updateInfo.available}
+                <p class="warning">✗ {$_('updater.version_outdated')}</p>
+              {:else}
+                <p class="success">{$_('updater.version_latest', { values: { version: currentAppVersion } })}</p>
+              {/if}
+            {/if}
+            
+            {#if updateInfo}
+              {#if updateInfo.available}
+                <p class="version-info">{$_('updater.new_version', { values: { version: updateInfo.version } })}</p>
+                {#if updateInfo.body}
+                  <details class="release-notes">
+                    <summary>{$_('updater.release_notes')}</summary>
+                    <div class="release-notes-content">{updateInfo.body}</div>
+                  </details>
+                {/if}
+                <div class="action-buttons">
+                  <button on:click={checkForUpdates} disabled={isInstallingUpdate}>{$_('updater.check_for_updates')}</button>
+                  {#if isInstallingUpdate}
+                    <button class="update-btn updating" disabled>
+                      <span class="spinner"></span>
+                      {$_('updater.installing_update')}
+                    </button>
+                  {:else}
+                    <button class="update-btn" on:click={installUpdate}>{$_('updater.install_update')}</button>
+                  {/if}
+                </div>
+              {:else}
+                <div class="action-buttons">
+                  <button on:click={checkForUpdates}>{$_('updater.check_for_updates')}</button>
+                </div>
+              {/if}
+            {:else}
+              <div class="action-buttons">
+                <button on:click={checkForUpdates}>{$_('updater.check_for_updates')}</button>
+              </div>
+            {/if}
+          </div>
+
+          <div class="settings-section">
+            <h2>🌐 Выбор языка / Language Selection</h2>
+            <div class="language-selector">
+              <button 
+                class="language-btn" 
+                class:active={$locale === 'ru'}
+                on:click={() => $locale = 'ru'}
+              >
+                RU Русский
+              </button>
+              <button 
+                class="language-btn" 
+                class:active={$locale === 'en'}
+                on:click={() => $locale = 'en'}
+              >
+                EN English
+              </button>
+            </div>
+          </div>
+
            <div class="settings-section">
               <h2>{$_('repositories.repository_management')}</h2>
               <div class="action-buttons">
@@ -2224,5 +2343,87 @@
 
   .update-btn:active {
     transform: translateY(0);
+  }
+
+  /* App updater styles */
+  .release-notes {
+    margin: 15px 0;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .release-notes summary {
+    padding: 12px 16px;
+    background: #f8f9fa;
+    cursor: pointer;
+    font-weight: 500;
+    color: #495057;
+    border-bottom: 1px solid #dee2e6;
+  }
+
+  .release-notes summary:hover {
+    background: #e9ecef;
+  }
+
+  .release-notes-content {
+    padding: 16px;
+    background: white;
+    color: #495057;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .release-notes[open] summary {
+    border-bottom: 1px solid #dee2e6;
+  }
+
+  /* Language selector styles */
+  .language-selector {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .language-btn {
+    padding: 12px 20px;
+    border: 2px solid #dee2e6;
+    border-radius: 8px;
+    background: white;
+    color: #495057;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    font-size: 14px;
+  }
+
+  .language-btn:hover {
+    border-color: #007acc;
+    background: #f8f9fa;
+    transform: translateY(-2px);
+  }
+
+  .language-btn.active {
+    border-color: #007acc;
+    background: linear-gradient(135deg, #007acc 0%, #005a9e 100%);
+    color: white;
+    box-shadow: 0 4px 12px rgba(0, 122, 204, 0.3);
+  }
+
+  .language-btn.active:hover {
+    background: linear-gradient(135deg, #005a9e 0%, #004080 100%);
+  }
+
+  @media (max-width: 768px) {
+    .language-selector {
+      flex-direction: column;
+    }
+
+    .language-btn {
+      width: 100%;
+      text-align: center;
+    }
   }
 </style>

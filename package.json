@@ -5,17 +5,18 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
-		"build": "vite build",
+		"build": "npm run sync-version && vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"format": "prettier --write .",
 		"lint": "prettier --check . && eslint .",
+		"sync-version": "node sync-version.js",
 		"tauri": "tauri",
-		"tauri:dev": "tauri dev",
-		"tauri:build": "tauri build",
-		"tauri:build:debug": "tauri build --debug"
+		"tauri:dev": "npm run sync-version && tauri dev",
+		"tauri:build": "npm run sync-version && tauri build",
+		"tauri:build:debug": "npm run sync-version && tauri build --debug"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^1.2.5",

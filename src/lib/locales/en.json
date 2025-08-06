@@ -94,5 +94,21 @@
     "confirm": "Confirm",
     "unknown": "Unknown",
     "environment_not_found": "Environment not found"
+  },
+  "updater": {
+    "check_for_updates": "Check for updates",
+    "checking_updates": "Checking for updates...",
+    "update_available": "Update available",
+    "no_updates": "No updates found",
+    "current_version": "Current version: {version}",
+    "new_version": "New version: {version}",
+    "install_update": "Install update",
+    "installing_update": "Installing update...",
+    "update_installed": "Update installed",
+    "update_failed": "Update failed: {error}",
+    "restart_required": "Application restart required",
+    "release_notes": "Release notes",
+    "version_latest": "✓ You have the latest version: v{version}",
+    "version_outdated": "✗ Version is outdated! Update recommended"
   }
 }

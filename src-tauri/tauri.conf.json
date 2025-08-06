@@ -23,12 +23,24 @@
     "security": {
       "csp": {
         "default-src": "'self'",
-        "connect-src": ["'self'", "https://portables.dev", "http://ipc.localhost"],
+        "connect-src": [
+          "'self'",
+          "https://portables.dev",
+          "http://ipc.localhost"
+        ],
         "style-src": "'self' 'unsafe-inline'"
       }
     }
   },
   "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://api.github.com/repos/portablesource/portablesource/releases/latest"
+      ],
+      "dialog": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI3MzVGNjFDQzE2OUNFQTAKUldTZ3ptbkJIUFkxdHduU1d3bllTSTdpL3lHaEkyU0VFZWR0ZW5jTmkxb0ZGeDc0dXEvL2NZRzYK"
+    },
     "allowlist": {
       "http": {
         "all": false,
@@ -40,7 +52,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi", "nsis"],
+    "targets": [
+      "msi",
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -59,7 +74,9 @@
       },
       "nsis": {
         "displayLanguageSelector": false,
-        "languages": ["English"],
+        "languages": [
+          "English"
+        ],
         "template": null,
         "headerImage": null,
         "sidebarImage": null,
