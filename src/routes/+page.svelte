@@ -1,11 +1,12 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
   import { open } from '@tauri-apps/plugin-dialog';
   import { onMount } from 'svelte';
   import { _, locale } from 'svelte-i18n';
 
   // Installation flow state
-  let currentStep = 'initial-check'; // 'initial-check', 'path-selection', 'installing', 'environment-setup', 'main-interface'
+  let currentStep = 'initial-check'; // 'initial-check', 'path-selection', 'installing', 'main-interface'
   let installPath = '';
   let isInstalling = false;
   let installStatus = '';
@@ -37,6 +38,17 @@
   };
   let isCheckingEnvironment = false;
   let isSettingUpEnvironment = false;
+  let envSetupProgress = { phase: '', done: 0, total: 0 };
+  let envProgressText = '';
+  let currentToolIcon = '🔧';
+  const toolNames: Record<string, string> = { python: 'Python', git: 'Git', ffmpeg: 'FFmpeg', cuda: 'CUDA' };
+  const toolIcons: Record<string, string> = { python: '🐍', git: '🧰', ffmpeg: '🎬', cuda: '⚡' };
+
+  function formatDuration(totalSeconds: number): string {
+    const minutes = Math.floor((totalSeconds || 0) / 60);
+    const seconds = Math.max(totalSeconds % 60, 0);
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  }
   interface Repository {
     id?: number;
     name: string;
@@ -85,27 +97,29 @@
 
   async function performInitialCheck() {
     try {
-      // Try to find CLI installation automatically
-      installPath = await invoke('find_cli_installation');
-      console.log('CLI found at:', installPath);
+      // Try registry first, then heuristics
+      try {
+        installPath = await invoke('get_install_path');
+      } catch (e) {
+        installPath = await invoke('find_cli_installation');
+      }
+      
       cliInstalled = true;
       
       // Check versions immediately after finding CLI
       await checkVersions();
-      
-      // Check environment status using CLI command
-      await checkEnvironmentStatus();
-      
-      if (environmentStatus.setup_completed) {
-        // Environment is ready, go to main interface
+
+      // Проверяем статус окружения сначала
+      const st = await checkEnvironmentStatus();
+      if (st && st.setup_completed) {
         currentStep = 'main-interface';
         await loadEnvironmentAndRepos();
       } else {
-        // Environment needs setup
-        currentStep = 'environment-setup';
+        // Запускаем настройку окружения с потоковым прогрессом
+        await startEnvironmentSetupStream();
       }
     } catch (error) {
-      console.log('CLI not found, showing installation options:', error);
+      
       cliInstalled = false;
       currentStep = 'path-selection';
     }
@@ -140,7 +154,7 @@
       const result = await invoke('set_install_path', { path: installPath }) as {success: boolean, message?: string};
       if (result.success) {
         currentStep = 'installing';
-        startInstallationProcess();
+        await startEnvironmentSetupStream();
       } else {
         installStatus = `Error: ${result.message}`;
       }
@@ -168,7 +182,7 @@
     }, 1000);
     
     try {
-      const result = await invoke('download_and_install_cli', { installPath }) as {success: boolean, message?: string};
+      const result = await invoke('download_and_install_cli', { install_path: installPath }) as {success: boolean, message?: string};
       if (result.success) {
         await testCliInstallation();
         if (cliInstalled) {
@@ -192,28 +206,21 @@
       installTimerInterval = null;
     }
     
-    // After CLI installation, check environment status
-    await checkEnvironmentStatus();
-    
-    if (environmentStatus.setup_completed) {
-      // Environment is ready, go to main interface
-      currentStep = 'main-interface';
-      await loadEnvironmentAndRepos();
-    } else {
-      // Environment needs setup
-      currentStep = 'environment-setup';
-    }
+    // После установки сразу запускаем настройку окружения
+    await startEnvironmentSetupStream();
   }
   
   async function loadEnvironmentAndRepos() {
     await checkEnvironmentSetup();
     await loadInstalledRepos();
     await loadAvailableRepos();
+    // Принудительно перечитаем статус из бэкенда после установки, чтобы увидеть новое значение
+    await checkEnvironmentStatus();
   }
 
   async function testCliInstallation(showError = true) {
     try {
-      const result = await invoke('test_cli_installation', { installPath }) as {success: boolean, message?: string};
+      const result = await invoke('test_cli_installation', { install_path: installPath }) as {success: boolean, message?: string};
       if (result.success) {
         cliInstalled = true;
         // Check versions after successful CLI test
@@ -238,7 +245,7 @@
     isCheckingVersions = true;
     try {
       // Get current CLI version
-      currentVersion = await invoke('get_cli_version', { installPath });
+      currentVersion = await invoke('get_cli_version', { install_path: installPath, installPath });
       
       // Get latest version from GitHub
       latestVersion = await invoke('get_latest_version_from_github');
@@ -359,7 +366,7 @@
   // Environment functions
   async function checkEnvironmentSetup() {
     try {
-      const envStatus = await invoke('check_environment_status', { installPath }) as {
+      const envStatus = await invoke('check_environment_status', { install_path: installPath, installPath }) as {
         environment_exists: boolean,
         setup_completed: boolean,
         overall_status: string
@@ -374,7 +381,7 @@
   async function checkEnvironmentStatus() {
     try {
       isCheckingEnvironment = true;
-      const status = await invoke('check_environment_status', { installPath }) as {
+      const status = await invoke('check_environment_status', { install_path: installPath, installPath }) as {
         environment_exists: boolean,
         setup_completed: boolean,
         overall_status: string
@@ -394,32 +401,54 @@
     }
   }
 
-  async function setupEnvironment() {
-    try {
-      isSettingUpEnvironment = true;
-      installStatus = $_('installation.setup_environment');
-      
-      const result = await invoke('run_cli_command', { 
-        installPath, 
-        args: ['--setup-env'] 
-      }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
-      
-      if (result.success) {
-        installStatus = $_('common.success');
-        const status = await checkEnvironmentStatus();
-        
-        if (status.setup_completed) {
+  async function startEnvironmentSetupStream() {
+    isSettingUpEnvironment = true;
+    installStatus = $_('installation.setup_environment');
+    envSetupProgress = { phase: 'init', done: 0, total: 0 };
+    envProgressText = '';
+    currentStep = 'installing';
+
+    // стартуем таймер отображения времени
+    installTimer = 0;
+    if (installTimerInterval) { clearInterval(installTimerInterval); }
+    installTimerInterval = setInterval(() => { installTimer++; }, 1000) as any;
+
+    const eventId = `${Date.now()}`;
+    // Подписка на события
+    const unlistenProgress = await listen(`env-setup-progress-${eventId}`, (e: any) => {
+      const { phase, done, total } = e.payload as any;
+      envSetupProgress = { phase, done, total };
+      const remaining = Math.max(total - done, 0);
+      const key = phase === 'init' ? '' : phase;
+      const displayName = key && toolNames[key] ? toolNames[key] : '';
+      currentToolIcon = key && toolIcons[key] ? toolIcons[key] : '🔧';
+      envProgressText = $_('installation.installing_tool', { values: { tool: displayName } });
+      installProgress = total ? Math.min(Math.round((done / total) * 100), 99) : 0;
+    });
+    const unlistenError = await listen(`env-setup-error-${eventId}`, (e: any) => {
+      installStatus = $_('installation.environment_setup_failed', { values: { error: String(e.payload) } });
+    });
+    const unlistenFinished = await listen(`env-setup-finished-${eventId}`, async (e: any) => {
+      const { success } = e.payload as any;
+      if (success) {
+        installProgress = 100;
+        installStatus = $_('installation.all_installed');
+        // краткая задержка и переход
+        setTimeout(async () => {
           currentStep = 'main-interface';
           await loadEnvironmentAndRepos();
-        }
+        }, 1000);
       } else {
-        installStatus = $_('installation.environment_setup_failed', { values: { error: result.stderr || $_('repositories.unknown_error') } });
+        installStatus = $_('installation.environment_setup_failed', { values: { error: $_('repositories.unknown_error') } });
       }
-    } catch (error) {
-      installStatus = $_('installation.environment_setup_error', { values: { error: String(error) } });
-    } finally {
+      unlistenProgress();
+      unlistenError();
+      unlistenFinished();
       isSettingUpEnvironment = false;
-    }
+      if (installTimerInterval) { clearInterval(installTimerInterval); installTimerInterval = null; }
+    });
+
+    await invoke('setup_environment_stream', { install_path: installPath, installPath, event_id: eventId, eventId });
   }
 
   async function loadInstalledRepos() {
@@ -427,8 +456,8 @@
       const installed: InstalledRepository[] = [];
       
       // Get folder lists from envs and repos directories
-      const envsFolders = await invoke('list_directory_folders', { installPath, directoryName: 'envs' }) as string[];
-      const reposFolders = await invoke('list_directory_folders', { installPath, directoryName: 'repos' }) as string[];
+      const envsFolders = await invoke('list_directory_folders', { install_path: installPath, installPath, directory_name: 'envs', directoryName: 'envs' }) as string[];
+      const reposFolders = await invoke('list_directory_folders', { install_path: installPath, installPath, directory_name: 'repos', directoryName: 'repos' }) as string[];
       
       // Find intersection - repositories that exist in both envs and repos
       const installedRepoNames = envsFolders.filter(envRepo => reposFolders.includes(envRepo));
@@ -537,7 +566,7 @@
       }
 
       // Check environment presence before installation using proper status check
-      const envStatus = await invoke('check_environment_status', { installPath }) as {
+      const envStatus = await invoke('check_environment_status', { install_path: installPath, installPath }) as {
         environment_exists: boolean,
         setup_completed: boolean,
         overall_status: string
@@ -548,11 +577,11 @@
         return;
       }
 
-      installStatus = `Installing ${repoName}...`;
+      installStatus = $_('repositories.installing');
       
       const cliArgs = ['--install-repo', repoName];
       
-      const result = await invoke('run_cli_command', { installPath, args: cliArgs }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
+      const result = await invoke('run_cli_command', { install_path: installPath, installPath, args: cliArgs }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
       
       if (result.success) {
         await loadInstalledRepos();
@@ -560,7 +589,7 @@
         // Show successful installation notification
         installedRepoName = repoName;
         showInstallNotification = true;
-        installStatus = `${repoName} installed successfully!`;
+        installStatus = $_('repositories.successfully_installed', { values: { name: repoName } });
         
         // Automatically hide notification after 3 seconds and navigate to installed repositories
         setTimeout(() => {
@@ -583,9 +612,9 @@
   async function checkRepoInstallStatus(repoName: string): Promise<boolean> {
     try {
       // Get folder lists in envs and repos directories
-      const envsFolders = await invoke('list_directory_folders', { installPath, directoryName: 'envs' }) as string[];
+      const envsFolders = await invoke('list_directory_folders', { install_path: installPath, installPath, directory_name: 'envs', directoryName: 'envs' }) as string[];
       
-      const reposFolders = await invoke('list_directory_folders', { installPath, directoryName: 'repos' }) as string[];
+      const reposFolders = await invoke('list_directory_folders', { install_path: installPath, installPath, directory_name: 'repos', directoryName: 'repos' }) as string[];
       
       // Repository is considered installed only if it exists in both directories
       const isInEnvs = envsFolders.includes(repoName);
@@ -601,21 +630,22 @@
 
   async function runRepo(repoName: string) {
     try {
-      installStatus = `Starting ${repoName}...`;
+      installStatus = $_('repositories.starting', { values: { repoName } });
       
       // Run batch file start_repo_name.bat from repository folder in new console window
       const batFile = `start_${repoName}.bat`;
       const workingDir = `${installPath}\\repos\\${repoName}`;
       
-      console.log(`Trying to run batch file: ${batFile}`);
-      console.log(`Working directory: ${workingDir}`);
+      
       
       const result = await invoke('run_batch_in_new_window', {
+        batch_file: batFile,
+        working_dir: workingDir,
         batchFile: batFile,
         workingDir: workingDir
       }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
       
-      console.log('Result:', result);
+      
       
       if (result.success) {
         installStatus = $_('repositories.started_success', { values: { repoName } });
@@ -630,12 +660,14 @@
 
   async function updateRepo(repoName: string) {
     try {
+      sidebarOpen = false;
       isUpdatingRepo = true;
       updatingRepoName = repoName;
-      installStatus = `Updating ${repoName}...`;
+      installStatus = $_('repositories.updating');
       
       // Use CLI command --update-repo
       const result = await invoke('run_cli_command', {
+        install_path: installPath,
         installPath,
         args: ['--update-repo', repoName]
       }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
@@ -655,26 +687,58 @@
 
   async function removeRepo(repoName: string) {
     try {
+      sidebarOpen = false;
       isRemovingRepo = true;
       removingRepoName = repoName;
-      installStatus = `Removing ${repoName}...`;
+      installStatus = $_('repositories.removing');
       
-      // Use CLI command to delete repository
-      const result = await invoke('delete_repository', {
-        install_path: installPath,
-        repo_name: repoName
-      }) as {success: boolean, message: string};
+      // Use CLI command to delete repository (with watchdog fallback)
+      
+      let completed = false;
+      let result: { success: boolean; message: string } = { success: false, message: 'pending' };
+
+      // Start native delete without awaiting to avoid hanging the handler
+      (invoke('delete_repository', { install_path: installPath, installPath, repo_name: repoName, repoName: repoName }) as Promise<{success: boolean, message: string}>)
+        .then((res) => {
+          if (!completed) {
+            completed = true;
+            result = res;
+            
+            // trigger UI refresh
+            loadInstalledRepos();
+          }
+        })
+        .catch((e) => {
+          console.error('delete_repository error (native)', e);
+        });
+
+      // Watchdog fallback after 2000ms if still not completed
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (!completed) {
+        const envPath = `${installPath}\\envs\\${repoName}`;
+        const repoPath = `${installPath}\\repos\\${repoName}`;
+        try {
+          await invoke('run_command', { command: `Remove-Item -Path "${envPath}" -Recurse -Force -ErrorAction SilentlyContinue`, working_dir: installPath, workingDir: installPath });
+          await invoke('run_command', { command: `Remove-Item -Path "${repoPath}" -Recurse -Force -ErrorAction SilentlyContinue`, working_dir: installPath, workingDir: installPath });
+          result = { success: true, message: 'removed by fallback' };
+          completed = true;
+          
+        } catch (e) {
+          console.error('fallback remove error', e);
+          result = { success: false, message: String(e) } as any;
+        }
+      }
       
       // Update installed repositories list
       await loadInstalledRepos();
       
       if (result.success) {
-        installStatus = `${repoName} removed!`;
+        installStatus = $_('repositories.removed_success', { values: { repoName } });
       } else {
-        installStatus = `Removal error: ${result.message}`;
+        installStatus = $_('repositories.installation_error', { values: { repoName, error: result.message } });
       }
     } catch (error) {
-      installStatus = `Removal error ${repoName}: ${error}`;
+      installStatus = $_('repositories.installation_error', { values: { repoName, error: String(error) } });
     } finally {
       isRemovingRepo = false;
       removingRepoName = '';
@@ -701,13 +765,15 @@
       // Remove all folders from envs
       const envResult = await invoke('run_command', {
         command: `Remove-Item -Path "${installPath}\\envs\\*" -Recurse -Force -ErrorAction SilentlyContinue`,
-        working_dir: installPath
+        working_dir: installPath,
+        workingDir: installPath
       }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
       
       // Remove all folders from repos
       const repoResult = await invoke('run_command', {
         command: `Remove-Item -Path "${installPath}\\repos\\*" -Recurse -Force -ErrorAction SilentlyContinue`,
-        working_dir: installPath
+        working_dir: installPath,
+        workingDir: installPath
       }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
       
       // Update installed repositories list
@@ -719,7 +785,7 @@
         installStatus = $_('common.error');
       }
     } catch (error) {
-      installStatus = `Repository removal error: ${error}`;
+      installStatus = $_('repositories.installation_error', { values: { repoName: 'all', error: String(error) } });
     }
   }
 
@@ -960,98 +1026,23 @@
             {$_('installation.confirm_start')}
           </button>
         {/if}
-        
-        {#if installStatus}
-          <p class="status">{installStatus}</p>
-        {/if}
       </div>
     {/if}
     
-    <!-- Step 2: Installation Progress -->
+    <!-- Единый экран прогресса установки/настройки -->
     {#if currentStep === 'installing'}
       <div class="step-container installation-step">
-        <h2>{$_('installation.installing_cli')}</h2>
-        <div class="installation-progress">
-          <div class="spinner"></div>
-          <p class="installation-text">{installStatus}</p>
-          <p class="timer">{$_('installation.time_elapsed', { values: { time: installTimer } })}</p>
-          
-          <!-- Progress Bar -->
-          <div class="progress-container">
+        <h2 class="nice-title">{$_('installation.installing_env')}</h2>
+        <div class="installation-progress fancy">
+          <div class="big-icon">{currentToolIcon}</div>
+          <p class="installation-text">{envProgressText || installStatus}</p>
+          <p class="timer">{$_('installation.time_elapsed', { values: { time: formatDuration(installTimer) } })}</p>
+          <div class="progress-container glass">
             <div class="progress-bar">
-              <div class="progress-fill" style="width: {installProgress}%"></div>
+              <div class="progress-fill gradient" style="width: {installProgress}%"></div>
             </div>
             <div class="progress-text">{Math.round(installProgress)}%</div>
           </div>
-        </div>
-      </div>
-    {/if}
-    
-    <!-- Step 3: Environment Setup -->
-    {#if currentStep === 'environment-setup'}
-      <div class="step-container environment-step">
-        <h1 class="step-title">{$_('installation.environment_setup_required')}</h1>
-        <p class="step-description">{$_('installation.cli_installed_env_needed')}</p>
-        
-        <div class="environment-status">
-          <h3>{$_('installation.current_status')}</h3>
-          <div class="status-item">
-            <span class="status-label">{$_('installation.environment_exists')}</span>
-            <span class="status-value {environmentStatus.environment_exists ? 'success' : 'error'}">
-              {environmentStatus.environment_exists ? '✅' : '❌'}
-            </span>
-          </div>
-          <div class="status-item">
-            <span class="status-label">{$_('installation.setup_completed')}</span>
-            <span class="status-value {environmentStatus.setup_completed ? 'success' : 'error'}">
-              {environmentStatus.setup_completed ? $_('installation.yes') : $_('installation.no')}
-            </span>
-          </div>
-          <div class="status-item">
-            <span class="status-label">{$_('installation.overall_status')}</span>
-            <span class="status-value">
-              {#if environmentStatus.overall_status === 'Environment not found'}
-                {$_('common.environment_not_found')}
-              {:else}
-                {environmentStatus.overall_status}
-              {/if}
-            </span>
-          </div>
-        </div>
-        
-        <div class="environment-actions">
-          {#if isSettingUpEnvironment}
-            <div class="setup-progress">
-              <div class="spinner"></div>
-              <p class="status">{$_('installation.installing_environment')}</p>
-            </div>
-          {:else if isCheckingEnvironment}
-            <p class="status">{$_('installation.checking_environment')}</p>
-          {:else}
-            <button 
-              class="setup-env-button" 
-              on:click={setupEnvironment}
-              disabled={environmentStatus.setup_completed}
-            >
-              {environmentStatus.setup_completed ? $_('installation.environment_ready') : $_('installation.setup_environment')}
-            </button>
-            
-            <button 
-              class="check-env-button" 
-              on:click={checkEnvironmentStatus}
-            >
-              {$_('installation.check_status_again')}
-            </button>
-            
-            {#if environmentStatus.setup_completed}
-              <button 
-                class="continue-button" 
-                on:click={() => { currentStep = 'main-interface'; loadEnvironmentAndRepos(); }}
-              >
-                {$_('installation.continue_to_repositories')}
-              </button>
-            {/if}
-          {/if}
         </div>
       </div>
     {/if}
@@ -1200,37 +1191,6 @@
           </div>
 
           <div class="settings-section">
-            <h2>{$_('cli.status')}</h2>
-            {#if cliInstalled}
-              <p class="success">✓ {$_('cli.installed_working')}</p>
-              {#if isCheckingVersions}
-                <p class="info">{$_('cli.checking_versions')}</p>
-              {:else if !updateAvailable && currentVersion && currentVersion !== 'Unknown'}
-                <p class="success">✓ {$_('cli.latest_version')}</p>
-              {:else}
-                <p class="version-info">{$_('cli.current_version', { values: { version: currentVersion || $_('common.unknown') } })}</p>
-                {#if updateAvailable && latestVersion}
-                  <p class="update-available">⚠️ {$_('cli.update_available', { values: { version: latestVersion } })}</p>
-                {/if}
-              {/if}
-              <div class="action-buttons">
-                <button on:click={() => testCliInstallation(true)} disabled={isInstalling || isUpdatingCli}>{$_('cli.check_again')}</button>
-                {#if isUpdatingCli}
-                  <button class="update-btn updating" disabled>
-                    <span class="spinner"></span>
-                    {$_('cli.updating')}
-                  </button>
-                {:else}
-                  <button class="update-btn" on:click={updateCli} disabled={isInstalling}>{$_('cli.update')}</button>
-                {/if}
-              </div>
-            {:else}
-              <p class="warning">{$_('cli.not_installed')}</p>
-              <button class="install-cli-btn" on:click={savePathAndStartInstallation}>{$_('cli.install_cli')}</button>
-            {/if}
-          </div>
-
-          <div class="settings-section">
             <h2>🔄 {$_('updater.check_for_updates')}</h2>
             
             <!-- Version Status Display -->
@@ -1369,18 +1329,22 @@
   .sidebar {
     position: fixed;
     top: 0;
-    left: -300px;
+    left: 0;
     width: 300px;
     height: 100vh;
     background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
-    box-shadow: 2px 0 15px rgba(0, 0, 0, 0.1);
-    transition: left 0.3s ease;
+    box-shadow: 2px 0 15px rgba(0, 0, 0, 0.08);
+    transform: translateX(-100%);
+    transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+    contain: paint;
     z-index: 1000;
     border-right: 1px solid #dee2e6;
+    backface-visibility: hidden;
   }
 
   .sidebar.open {
-    left: 0;
+    transform: translateX(0);
   }
 
   .sidebar-content {
@@ -1414,7 +1378,8 @@
     font-size: 16px;
     color: #6c757d;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+    will-change: transform;
   }
 
   .nav-item:hover {
@@ -1456,13 +1421,16 @@
     height: 100vh;
     background: rgba(0, 0, 0, 0.5);
     z-index: 999;
+    animation: fadeIn 180ms ease forwards;
+    will-change: opacity;
   }
 
   /* Main Content */
   .main-content {
     padding: 40px 20px;
     min-height: 100vh;
-    transition: margin-left 0.3s ease;
+    transition: margin-left 260ms ease;
+    will-change: margin-left;
   }
 
   .main-content.shifted {
@@ -1499,6 +1467,13 @@
     margin-bottom: 15px;
     font-weight: 300;
     letter-spacing: -0.5px;
+  }
+  .nice-title {
+    letter-spacing: 0.3px;
+    background: linear-gradient(90deg, #495057, #007acc);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 
   .step-description {
@@ -1583,14 +1558,7 @@
     box-shadow: none;
   }
 
-  .status {
-    margin-top: 20px;
-    padding: 15px;
-    border-radius: 8px;
-    background: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
-  }
+  /* removed .status */
 
   /* Repositories Grid */
   .repos-grid {
@@ -1653,7 +1621,8 @@
     border-radius: 8px;
     cursor: pointer;
     font-weight: 500;
-    transition: all 0.3s ease;
+    transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
+    will-change: transform;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1680,7 +1649,8 @@
     border-radius: 8px;
     cursor: pointer;
     font-weight: 500;
-    transition: all 0.3s ease;
+    transition: transform 150ms ease, box-shadow 150ms ease;
+    will-change: transform;
     box-shadow: 0 2px 8px rgba(23, 162, 184, 0.3);
   }
 
@@ -1736,7 +1706,8 @@
     background: white;
     padding: 20px;
     border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+    will-change: transform;
     border: 1px solid #e9ecef;
     display: flex;
     justify-content: space-between;
@@ -1762,7 +1733,8 @@
     cursor: pointer;
     font-size: 14px;
     font-weight: 500;
-    transition: all 0.3s ease;
+    transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
+    will-change: transform;
   }
 
   .launch-btn {
@@ -1897,22 +1869,6 @@
     box-shadow: 0 6px 20px rgba(220, 53, 69, 0.4) !important;
   }
 
-  .install-cli-btn {
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-    color: white;
-    border: none;
-    padding: 12px 24px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: all 0.3s ease;
-  }
-
-  .install-cli-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
-  }
-
   .success {
     color: #28a745;
     font-weight: bold;
@@ -2021,102 +1977,13 @@
     }
   }
 
-  /* Environment Setup Page Styles */
-  .environment-step {
-    max-width: 600px;
-    margin: 0 auto;
-    text-align: center;
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 
-  .environment-status {
-    background: white;
-    padding: 30px;
-    border-radius: 12px;
-    margin: 30px 0;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-    border: 1px solid #e9ecef;
-  }
-
-  .environment-status h3 {
-    color: #495057;
-    font-size: 1.2rem;
-    margin-bottom: 20px;
-    font-weight: 600;
-  }
-
-  .status-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 0;
-    border-bottom: 1px solid #f8f9fa;
-  }
-
-  .status-item:last-child {
-    border-bottom: none;
-  }
-
-  .status-label {
-    font-weight: 500;
-    color: #495057;
-  }
-
-  .status-value {
-    font-weight: 600;
-  }
-
-  .status-value.success {
-    color: #28a745;
-  }
-
-  .status-value.error {
-    color: #dc3545;
-  }
-
-  .environment-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    align-items: center;
-  }
-
-  .setup-env-button, .check-env-button, .continue-button {
-    padding: 15px 30px;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 16px;
-    font-weight: 600;
-    transition: all 0.3s ease;
-    min-width: 200px;
-  }
-
-  .setup-env-button {
-    background: linear-gradient(135deg, #007acc 0%, #005a9e 100%);
-    color: white;
-  }
-
-  .setup-env-button:disabled {
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-    cursor: default;
-  }
-
-  .check-env-button {
-    background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
-    color: white;
-  }
-
-  .continue-button {
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-    color: white;
-  }
-
-  .setup-env-button:hover:not(:disabled),
-  .check-env-button:hover,
-  .continue-button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
-  }
+  /* Environment Setup Page Styles (kept minimal now) */
+  .environment-step { max-width: 600px; margin: 0 auto; text-align: center; }
 
   /* Progress Bar Styles */
   .progress-container {
@@ -2126,14 +1993,29 @@
     margin-left: auto;
     margin-right: auto;
   }
+  .installation-progress.fancy { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .big-icon { font-size: 40px; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.15)); }
+  .progress-container.glass {
+    background: linear-gradient(180deg, rgba(255,255,255,0.75) 0%, rgba(248,249,250,0.75) 100%);
+    backdrop-filter: blur(8px);
+    border-radius: 12px;
+    padding: 10px 14px;
+    border: 1px solid rgba(0,0,0,0.05);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+  .progress-fill.gradient {
+    background: linear-gradient(90deg, #3b82f6 0%, #22c55e 100%);
+    box-shadow: inset 0 2px 8px rgba(0,0,0,0.15);
+  }
 
   .progress-bar {
     width: 100%;
-    height: 12px;
-    background: #e9ecef;
-    border-radius: 6px;
+    height: 14px;
+    background: #dfe3ea; /* цвет подложки (трек) в стиле карточки */
+    border: 1px solid #cfd4da;
+    border-radius: 8px;
     overflow: hidden;
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.08), 0 1px 0 rgba(255,255,255,0.6);
   }
 
   .progress-fill {
@@ -2184,16 +2066,7 @@
       padding: 0 15px;
     }
 
-    .environment-status {
-      padding: 20px;
-      margin: 20px 0;
-    }
-
-    .setup-env-button, .check-env-button, .continue-button {
-      min-width: 100%;
-      padding: 12px 20px;
-      font-size: 14px;
-    }
+    /* legacy selectors removed */
 
     .progress-container {
       max-width: 100%;
@@ -2260,28 +2133,7 @@
     }
   }
 
-  /* Setup Progress Styles */
-  .setup-progress {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 15px;
-    padding: 20px;
-  }
-
-  .setup-progress .spinner {
-    width: 24px;
-    height: 24px;
-    border: 3px solid rgba(0, 122, 204, 0.3);
-    border-top: 3px solid #007acc;
-  }
-
-  .setup-progress .status {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 500;
-    color: #495057;
-  }
+  /* Setup Progress Styles (not used directly anymore) */
 
   /* Update and Remove Button Spinner Styles */
   .update-btn.updating,
@@ -2311,13 +2163,6 @@
     font-weight: 500;
   }
 
-  .update-available {
-    color: #fd7e14;
-    font-size: 14px;
-    margin: 8px 0;
-    font-weight: 600;
-  }
-
   .info {
     color: #17a2b8;
     font-size: 14px;
@@ -2333,7 +2178,8 @@
     border-radius: 6px;
     cursor: pointer;
     font-weight: 600;
-    transition: all 0.3s ease;
+    transition: transform 150ms ease, box-shadow 150ms ease;
+    will-change: transform;
   }
 
   .update-btn:hover {
@@ -2395,7 +2241,8 @@
     color: #495057;
     cursor: pointer;
     font-weight: 500;
-    transition: all 0.3s ease;
+    transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+    will-change: transform;
     font-size: 14px;
   }
 

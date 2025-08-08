@@ -18,7 +18,9 @@
     "select_folder_btn": "Select Folder",
     "confirm_start": "Confirm and Start Installation",
     "installing_cli": "Installing PortableSource CLI",
-    "time_elapsed": "Time elapsed: {time} sec",
+    "installing_env": "Setting up environment",
+    "installing_tool": "Installing {tool}...",
+    "time_elapsed": "Time elapsed: {time}",
     "environment_setup_required": "Environment Setup Required",
     "cli_installed_env_needed": "PortableSource CLI is installed, but the environment needs to be set up.",
     "current_status": "Current Status:",
@@ -36,7 +38,9 @@
     "environment_setup_first": "Environment must be set up first. Go to settings and click \"Setup Environment\".",
     "environment_setup_failed": "Environment setup failed: {error}",
     "environment_setup_error": "Environment setup error: {error}",
-    "check_failed": "Check failed"
+    "check_failed": "Check failed",
+    "all_installed": "All set!",
+    "installing": "Installing..."
   },
   "repositories": {
     "top_repositories": "Top Repositories",
@@ -46,6 +50,7 @@
     "open": "Open",
     "install": "Install",
     "installing": "Installing...",
+    "starting": "Starting {repoName}...",
     "launch": "Launch",
     "update": "Update",
     "updating": "Updating...",
@@ -63,7 +68,8 @@
     "update_error": "Update error {repoName}: {error}",
     "unknown_error": "Unknown error",
     "started_success": "{repoName} started in new console window!",
-    "updated_success": "{repoName} updated!"
+    "updated_success": "{repoName} updated!",
+    "removed_success": "{repoName} removed!"
   },
   "cli": {
     "status": "CLI Status",
@@ -82,9 +88,9 @@
     "installation_path": "Installation Path",
     "change": "Change",
     "danger_zone": "Danger Zone",
-    "danger_warning": "Complete uninstall will permanently delete all data, repositories, environments and the CLI itself.\nThis action is irreversible!",
+    "danger_warning": "Complete uninstall will permanently delete all data, repositories and environments.\nThis action is irreversible!",
     "complete_uninstall": "Complete Uninstall",
-    "confirm_uninstall": "WARNING! This action will completely remove PortableSource:\n\n• All installed repositories\n• All environments and data\n• CLI and all program files\n• Registry entries\n\nThis action is IRREVERSIBLE!\n\nAre you sure you want to continue?"
+    "confirm_uninstall": "WARNING! This action will completely remove PortableSource:\n\n• All installed repositories\n• All environments and data\n• And all program files\n• Registry entries\n\nThis action is IRREVERSIBLE!\n\nAre you sure you want to continue?"
   },
   "common": {
     "loading": "Loading...",

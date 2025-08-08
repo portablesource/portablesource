@@ -1,6 +1,6 @@
 [package]
 name = "portablesource"
-version = "0.0.4"
+version = "0.0.5"
 description = "App for easy install AI"
 authors = ["NeuroDonu"]
 license = ""
@@ -29,3 +29,4 @@ winreg = "0.52"
 reqwest = { version = "0.12.5", features = ["json"] }
 zip = "2.1.3"
 tokio = { version = "1.38.0", features = ["full"] }
+portablesource-rs = { path = "../cli" }

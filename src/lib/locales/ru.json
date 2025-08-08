@@ -18,7 +18,9 @@
     "select_folder_btn": "Выбрать папку",
     "confirm_start": "Подтвердить и начать установку",
     "installing_cli": "Установка PortableSource CLI",
-    "time_elapsed": "Прошло времени: {time} сек",
+    "installing_env": "Настройка окружения",
+    "installing_tool": "Установка {tool}...",
+    "time_elapsed": "Прошло времени: {time}",
     "environment_setup_required": "Требуется настройка окружения",
     "cli_installed_env_needed": "PortableSource CLI установлен, но окружение нужно настроить.",
     "current_status": "Текущий статус:",
@@ -36,7 +38,9 @@
     "environment_setup_first": "Сначала необходимо настроить окружение. Перейдите в настройки и нажмите \"Настроить окружение\".",
     "environment_setup_failed": "Ошибка настройки окружения: {error}",
     "environment_setup_error": "Ошибка настройки окружения: {error}",
-    "check_failed": "Проверка не удалась"
+    "check_failed": "Проверка не удалась",
+    "all_installed": "Все установлено!",
+    "installing": "Установка..."
   },
   "repositories": {
     "top_repositories": "Топ репозитории",
@@ -46,6 +50,7 @@
     "open": "Открыть",
     "install": "Установить",
     "installing": "Установка...",
+    "starting": "Запуск {repoName}...",
     "launch": "Запустить",
     "update": "Обновить",
     "updating": "Обновление...",
@@ -63,7 +68,8 @@
     "update_error": "Ошибка обновления {repoName}: {error}",
     "unknown_error": "Неизвестная ошибка",
     "started_success": "{repoName} запущен в новом окне консоли!",
-    "updated_success": "{repoName} обновлен!"
+    "updated_success": "{repoName} обновлен!",
+    "removed_success": "{repoName} удален!"
   },
   "cli": {
     "status": "Статус CLI",
@@ -82,9 +88,9 @@
     "installation_path": "Путь установки",
     "change": "Изменить",
     "danger_zone": "Опасная зона",
-    "danger_warning": "Полное удаление навсегда удалит все данные, репозитории, окружения и сам CLI.\nЭто действие необратимо!",
+    "danger_warning": "Полное удаление навсегда удалит все данные, репозитории и окружения.\nЭто действие необратимо!",
     "complete_uninstall": "Полное удаление",
-    "confirm_uninstall": "ВНИМАНИЕ! Это действие полностью удалит PortableSource:\n\n• Все установленные репозитории\n• Все окружения и данные\n• CLI и все файлы программы\n• Записи в реестре\n\nЭто действие НЕОБРАТИМО!\n\nВы уверены, что хотите продолжить?"
+    "confirm_uninstall": "ВНИМАНИЕ! Это действие полностью удалит PortableSource:\n\n• Все установленные репозитории\n• Все окружения и данные\n• И все файлы программы\n• Записи в реестре\n\nЭто действие НЕОБРАТИМО!\n\nВы уверены, что хотите продолжить?"
   },
   "common": {
     "loading": "Загрузка...",
