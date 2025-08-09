@@ -23,7 +23,7 @@ This is the new standard.
 
 ## Quick Start & **IMPORTANT Rules**
 
-You can grab the latest release [here](LINK_TO_YOUR_RELEASES_PAGE). To avoid headaches, please follow these 3 critical rules:
+You can grab the latest release [here](https://github.com/portablesource/portablesource/releases/latest). To avoid headaches, please follow these 3 critical rules:
 
 1.  **DO NOT use your `Downloads` folder.**
 2.  **INSTALL IN A FOLDER AT THE ROOT OF A DRIVE.** For example: `C:\PortableSource` or `D:\PS`. Never install directly onto the drive itself (`C:\`).
