@@ -69,7 +69,10 @@
     "unknown_error": "Неизвестная ошибка",
     "started_success": "{repoName} запущен в новом окне консоли!",
     "updated_success": "{repoName} обновлен!",
-    "removed_success": "{repoName} удален!"
+    "removed_success": "{repoName} удален!",
+    "install_by_url": "Установить по ссылке/имени",
+    "enter_repo_url": "Введите ссылку или имя репозитория",
+    "repo_input_placeholder": "https://github.com/owner/repo.git или owner/repo или name"
   },
   "cli": {
     "status": "Статус CLI",

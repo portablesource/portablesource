@@ -62,6 +62,7 @@
     name: string;
     status?: string;
     hasLauncher?: boolean;
+    sourceLabel?: string; // GitHub/Git/Сервер
   }
 
   let installedRepos: InstalledRepository[] = [];
@@ -454,46 +455,47 @@
   async function loadInstalledRepos() {
     try {
       const installed: InstalledRepository[] = [];
-      
-      // Get folder lists from envs and repos directories
-      const envsFolders = await invoke('list_directory_folders', { install_path: installPath, installPath, directory_name: 'envs', directoryName: 'envs' }) as string[];
-      const reposFolders = await invoke('list_directory_folders', { install_path: installPath, installPath, directory_name: 'repos', directoryName: 'repos' }) as string[];
-      
-      // Find intersection - repositories that exist in both envs and repos
-      const installedRepoNames = envsFolders.filter(envRepo => reposFolders.includes(envRepo));
-      
-      // Get additional information for each found repository
-      for (const repoName of installedRepoNames) {
-        try {
-          // Get repository information from server
-          const response = await fetch(`/api/search?q=${repoName}`);
-          if (response.ok) {
-            const data = await response.json();
-            const repoInfo = data.repositories?.find((r: Repository) => r.name === repoName);
-            
-            installed.push({
-              name: repoName,
-              status: 'installed',
-              hasLauncher: true
-            });
-          } else {
-            // If unable to get server information, add basic info
-            installed.push({
-              name: repoName,
-              status: 'installed',
-              hasLauncher: true
-            });
+
+      // Prefer asking CLI to list repos with source tags
+      try {
+        const res = await invoke('run_cli_command', { install_path: installPath, installPath, args: ['list-repos'] }) as { success: boolean, stdout: string, stderr: string };
+        if (res && res.success) {
+          const lines = (res.stdout || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+          for (const line of lines) {
+            const m = line.match(/^\s*-\s*(.+)$/); // lines like "  - name [From github]"
+            if (m) {
+              const raw = m[1].trim();
+              let name = raw;
+              let sourceLabel: string | undefined = undefined;
+              const suff = raw.match(/\[(.*?)\]$/);
+              if (suff) {
+                name = raw.replace(/\s*\[(.*?)\]$/, '').trim();
+                const low = (suff[1] || '').toLowerCase();
+                if (low.includes('github')) sourceLabel = 'GitHub';
+                else if (low.includes('git')) sourceLabel = 'Git';
+                else if (low.includes('server')) sourceLabel = 'Server';
+              }
+              installed.push({ name, status: 'installed', hasLauncher: true, sourceLabel });
+            }
           }
-        } catch (error) {
-          // In case of server request error, add basic info
-          installed.push({
-            name: repoName,
-            status: 'installed',
-            hasLauncher: true
-          });
+        }
+      } catch (_) {
+        // ignore and fallback
+      }
+
+      // Fallback: filesystem intersection if CLI not available or returned nothing
+      if (installed.length === 0) {
+        const envsFolders = await invoke('list_directory_folders', { install_path: installPath, installPath, directory_name: 'envs', directoryName: 'envs' }) as string[];
+        const reposFolders = await invoke('list_directory_folders', { install_path: installPath, installPath, directory_name: 'repos', directoryName: 'repos' }) as string[];
+        const envSet = new Set((envsFolders || []).map((n) => (n || '').toLowerCase()));
+        for (const repoName of reposFolders || []) {
+          const match = envSet.has((repoName || '').toLowerCase());
+          if (match) {
+            installed.push({ name: repoName, status: 'installed', hasLauncher: true });
+          }
         }
       }
-      
+
       installedRepos = installed;
     } catch (error) {
       console.error('Error loading installed repositories:', error);
@@ -606,6 +608,88 @@
       isInstallingRepo = false;
       installingRepoName = '';
     }
+  }
+
+  // Helper: extract display folder name from input (URL or name)
+  function extractRepoDisplayName(input: string): string {
+    try {
+      if (input.startsWith('http') || input.startsWith('git@')) {
+        const url = new URL(input.replace('git@', 'ssh://git@'));
+        let last = url.pathname.split('/').filter(Boolean).pop() || input;
+        return last.endsWith('.git') ? last.slice(0, -4) : last;
+      }
+    } catch (_) {
+      // Fallback to raw input
+    }
+    // owner/name or plain name
+    const seg = input.split('/').filter(Boolean).pop() || input;
+    return seg.endsWith('.git') ? seg.slice(0, -4) : seg;
+  }
+
+  // Install repository by user-provided input (URL or name)
+  async function installRepoFromInput(userInput: string) {
+    const displayName = extractRepoDisplayName(userInput);
+    try {
+      isInstallingRepo = true;
+      installingRepoName = displayName;
+
+      if (!cliInstalled) {
+        installStatus = $_('cli.not_installed');
+        setTimeout(() => { setCurrentView('settings'); sidebarOpen = false; }, 1500);
+        return;
+      }
+
+      // Check if repo with this display name seems installed
+      const isInstalled = await checkRepoInstallStatus(displayName);
+      if (isInstalled) {
+        installedRepoName = displayName;
+        showInstallNotification = true;
+        setTimeout(() => { showInstallNotification = false; setCurrentView('installed-repos'); }, 2000);
+        return;
+      }
+
+      // Ensure environment is ready
+      const envStatus = await invoke('check_environment_status', { install_path: installPath, installPath }) as {
+        environment_exists: boolean, setup_completed: boolean, overall_status: string
+      };
+      if (!envStatus.setup_completed) { installStatus = $_('installation.environment_setup_first'); return; }
+
+      installStatus = $_('repositories.installing');
+      const result = await invoke('run_cli_command', {
+        install_path: installPath, installPath, args: ['--install-repo', userInput]
+      }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
+
+      if (result.success) {
+        await loadInstalledRepos();
+        installedRepoName = displayName;
+        showInstallNotification = true;
+        installStatus = $_('repositories.successfully_installed', { values: { name: displayName } });
+        setTimeout(() => { showInstallNotification = false; setCurrentView('installed-repos'); }, 3000);
+      } else {
+        installStatus = $_('repositories.installation_error', { values: { repoName: displayName, error: result.stderr || result.stdout || $_('repositories.unknown_error') } });
+      }
+    } catch (error) {
+      console.error('Error during repository installation (input):', error);
+      installStatus = $_('repositories.installation_error', { values: { repoName: displayName, error: String(error) } });
+    } finally {
+      isInstallingRepo = false;
+      installingRepoName = '';
+    }
+  }
+
+  // Modern modal instead of native prompt
+  let showAddRepoModal = false;
+  let newRepoInput = '';
+  function openAddRepoModal() {
+    newRepoInput = '';
+    showAddRepoModal = true;
+  }
+  function closeAddRepoModal() { showAddRepoModal = false; }
+  function confirmAddRepoModal() {
+    const v = (newRepoInput || '').trim();
+    if (!v) { closeAddRepoModal(); return; }
+    closeAddRepoModal();
+    installRepoFromInput(v);
   }
 
   // Check repository installation status by folder presence
@@ -1074,6 +1158,13 @@
 
       <!-- Top Repositories View -->
       {#if currentView === 'top-repos'}
+        <!-- Add by URL/name CTA on top -->
+        <div class="add-repo-cta">
+          <button class="add-repo-btn" title={$_('repositories.install_by_url')} on:click={openAddRepoModal}>
+            + {$_('repositories.install_by_url')}
+          </button>
+        </div>
+
         <div class="repos-grid">
            {#each availableRepos as repo}
              <div class="repo-card">
@@ -1119,6 +1210,21 @@
              </div>
            {/each}
          </div>
+
+          {#if showAddRepoModal}
+           <div class="modal-backdrop" role="button" tabindex="0" aria-label="Close modal"
+                on:click={closeAddRepoModal}
+                on:keydown={(e) => { if (e.key==='Escape' || e.key==='Enter' || e.key===' ') closeAddRepoModal(); }}></div>
+           <div class="modal-card" role="dialog" aria-modal="true">
+             <h3>🧩 {$_('repositories.install_by_url')}</h3>
+             <p class="modal-sub">{$_('repositories.enter_repo_url')}</p>
+             <input type="text" bind:value={newRepoInput} placeholder={$_('repositories.repo_input_placeholder')} on:keydown={(e) => { if (e.key==='Enter') confirmAddRepoModal(); if (e.key==='Escape') closeAddRepoModal(); }} />
+             <div class="modal-actions">
+               <button class="btn-secondary" on:click={closeAddRepoModal}>{$_('common.cancel')}</button>
+               <button class="btn-primary" on:click={confirmAddRepoModal}>{$_('common.confirm')}</button>
+             </div>
+           </div>
+         {/if}
          
          <!-- Installation Status Display -->
          {#if installStatus && isInstallingRepo}
@@ -1143,7 +1249,7 @@
             <div class="repos-list">
               {#each installedRepos as repo}
                 <div class="installed-repo-item">
-                  <h3>{repo.name}</h3>
+                  <h3>{repo.name} {#if repo.sourceLabel}<span class="repo-source-badge" class:github={repo.sourceLabel==='GitHub'} class:git={repo.sourceLabel==='Git'} class:server={repo.sourceLabel==='Сервер'}>{repo.sourceLabel}</span>{/if}</h3>
                   <div class="repo-actions">
                     {#if repo.hasLauncher}
                       <button class="launch-btn" on:click={() => runRepo(repo.name)}>{$_('repositories.launch')}</button>
@@ -1439,7 +1545,7 @@
 
   .content-header {
     text-align: center;
-    margin-bottom: 40px;
+    margin-bottom: 0px;
   }
 
   .content-header h1 {
@@ -1660,6 +1766,52 @@
     box-shadow: 0 4px 15px rgba(23, 162, 184, 0.4);
   }
 
+  /* Modal styles */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1100;
+    animation: fadeIn 160ms ease;
+  }
+  .modal-card {
+    position: fixed; z-index: 1101;
+    left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(520px, 92vw);
+    max-height: 80vh;
+    background: white; border-radius: 16px; padding: 20px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    border: 1px solid #e9ecef;
+    animation: fadeIn 180ms ease;
+    overflow: auto;
+  }
+  .modal-card h3 { margin: 0 0 8px 0; color: #343a40; font-weight: 700; }
+  .modal-sub { margin: 0 0 14px 0; color: #6c757d; }
+  .modal-card input {
+    width: 100%; padding: 12px 14px; border: 1px solid #ced4da; border-radius: 10px; outline: none;
+    font-size: 14px;
+  }
+  .modal-card input:focus { border-color: #007acc; box-shadow: 0 0 0 3px rgba(0,122,204,0.15); }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
+  .btn-secondary { background: #e9ecef; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; color: #495057; }
+  .btn-primary { background: #007acc; color: white; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; }
+  .btn-primary:hover { background: #005a9e; }
+
+  /* Add by URL CTA */
+  .add-repo-cta { display: flex; justify-content: center; margin: 20px 0 20px 0; }
+  .add-repo-btn {
+    padding: 14px 20px;
+    border-radius: 12px;
+    border: none;
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(32, 201, 151, 0.25);
+    transition: transform 120ms ease, box-shadow 120ms ease;
+  }
+  .add-repo-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 28px rgba(32,201,151,0.35); }
+  .add-repo-btn:active { transform: translateY(0); }
+  @media (max-width: 640px) { .add-repo-btn { width: 100%; max-width: 480px; } }
+
   .install-repo-btn:hover:not(:disabled) {
     transform: translateY(-1px);
     box-shadow: 0 4px 15px rgba(0, 122, 204, 0.3);
@@ -1720,6 +1872,19 @@
     font-size: 1.1rem;
     font-weight: 600;
   }
+  .repo-source-badge {
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #155724;
+    background: #d4edda;
+    border: 1px solid #c3e6cb;
+  }
+  .repo-source-badge.github { color: #0b3d91; background: #e0ecff; border-color: #c3d7ff; }
+  .repo-source-badge.git { color: #8a2c0b; background: #ffe9e0; border-color: #ffd1c2; }
+  .repo-source-badge.server { color: #155724; background: #d4edda; border-color: #c3e6cb; }
 
   .repo-actions {
     display: flex;
