@@ -1,43 +1,51 @@
 # PortableSource
 
-Easy install ANY AI by few clicks.
+### The fast, safe, and truly portable AI environment.
 
 [![Crowdin](https://badges.crowdin.net/portablesource/localized.svg)](https://crowdin.com/project/portablesource)
 
-Speak russian? Just read this: [README_RU](README_RU.md)
+[Русская версия README](README_RU.md)
 
-A brief installation guide:
-You can use either the portable or standalone version, it's up to you. But when you install PortableSource on your computer, PLEASE! Read these 3 simple points, which will save you a headache and me from useless issues:
-1. Never put IT in Downloads. 
-2. It is CRITICALLY IMPORTANT to use the root of the disk! For example, a folder like:
-C:\Portablesource or C:\PS. DO NOT INSTALL ON THE DISK ITSELF! ALWAYS install in a folder!
-3. NO SYMBOLS OTHER THAN ENGLISH IN THE PATHS! No spaces, no special symbols, no symbols from languages other than English.
+---
 
-I hope this memo will help you save time and nerves!
+## Tired of slow, bloated, and insecure AI tools? So was I.
 
-## Donates
-bitcoin - bc1qqjat04ugt94eew3p920kdwdmtcs0w7hqkrhfqr (native segwt)
+Tools like Pinokio are popular, but they come with a price: messy architectures, questionable security practices, and a complete lack of accountability from anonymous developers. **This is unacceptable.**
 
-eth - 0x42cF1F220E1C5eE040010E918C6222456b03a8bd 
+I wrote a [full investigation into Pinokio's security risks](https://blog.neurodonu.dev/how-is-it-pinokio/) that revealed these issues. Then I built the solution.
 
-usdt (trc-20) - TAcYfCZh1UU6kifa5sJZfDakDPHZ7sv4bV
+**PortableSource is everything Pinokio isn't:**
+*   **Fast & Lightweight:** Built on Rust for maximum performance and minimal footprint. No more gigabytes of junk from Conda.
+*   **Truly Portable:** Designed from the ground up to run anywhere, solving critical path length issues on Windows with virtual disks.
+*   **Secure & Transparent:** Built with a clean, modern architecture and a developer who takes responsibility. No monkey-patching, no shady practices.
 
-usdt/usdc (bnb-20) - 0xF6B2FF95c015821aE369187eECAe6D1991d6D542
+This is the new standard.
 
+## Quick Start & **IMPORTANT Rules**
 
-## License
+You can grab the latest release [here](LINK_TO_YOUR_RELEASES_PAGE). To avoid headaches, please follow these 3 critical rules:
 
-Copyright (c) 2025 PortableSource / NeuroDonu
+1.  **DO NOT use your `Downloads` folder.**
+2.  **INSTALL IN A FOLDER AT THE ROOT OF A DRIVE.** For example: `C:\PortableSource` or `D:\PS`. Never install directly onto the drive itself (`C:\`).
+3.  **ENGLISH CHARACTERS ONLY** in the installation path. No spaces, no special symbols.
 
-This work is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License**.
+## Support
 
-This means you are free to share and adapt the material, but:
-- You **must give credit**.
-- You **cannot use it for commercial purposes**.
-- You **must share any adaptations under the same license**.
+If you believe in this project and want to help dethrone the old, insecure standard, consider supporting its development. Every donation helps.
 
-**In plain English: NO ONE is allowed to sell this software or use it in a commercial product without my explicit written permission.**
+**Bitcoin (BTC):** `bc1qqjat04ugt94eew3p920kdwdmtcs0w7hqkrhfqr`
 
-For the full legal code, see the [LICENSE](LICENSE) file.
+**Ethereum (ETH):** `0x42cF1F220E1C5eE040010E918C6222456b03a8bd`
 
-For commercial licensing inquiries, please contact me at `contact@portables.dev`
+**USDT (TRC-20):** `TAcYfCZh1UU6kifa5sJZfDakDPHZ7sv4bV`
+
+**USDT/USDC (BEP-20):** `0xF6B2FF95c015821aE369187eECAe6D1991d6D542`
+
+## Licensing
+
+PortableSource is licensed under the **CC BY-NC-SA 4.0** license.
+This means it's free for personal use, modification, and sharing. However, **commercial use is strictly prohibited without explicit written permission.**
+
+For commercial licensing inquiries, please contact me at `contact@portables.dev`.
+
+See the full [LICENSE](LICENSE) file for details.
