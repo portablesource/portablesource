@@ -18,18 +18,18 @@
   // Main interface state
   let cliInstalled = false;
   
-  // Version management state
-  let currentVersion = '';
-  let latestVersion = '';
-  let isCheckingVersions = false;
-  let updateAvailable = false;
-  let isUpdatingCli = false;
+  // (removed) Legacy CLI version management state
 
   // App updater state
   let currentAppVersion = ''; // Will be loaded from Tauri
   let isCheckingUpdates = false;
   let isInstallingUpdate = false;
   let updateInfo: any = null;
+
+  // MSVC Build Tools state
+  let msvcInstalled: boolean | null = null;
+  let isAdminUser: boolean = false;
+  let isInstallingMsvc = false;
 
   let environmentStatus = {
     environment_exists: false,
@@ -43,6 +43,10 @@
   let currentToolIcon = '🔧';
   const toolNames: Record<string, string> = { python: 'Python', git: 'Git', ffmpeg: 'FFmpeg', cuda: 'CUDA' };
   const toolIcons: Record<string, string> = { python: '🐍', git: '🧰', ffmpeg: '🎬', cuda: '⚡' };
+  // Watchdog against stuck progress
+  let lastProgressAt = 0;
+  let stallWatchInterval: number | null = null;
+  const stallTimeoutSec = 30; // if no progress for 30s, verify status and fast-forward
 
   function formatDuration(totalSeconds: number): string {
     const minutes = Math.floor((totalSeconds || 0) / 60);
@@ -85,6 +89,7 @@
   onMount(async () => {
     await loadAppVersion();
     await performInitialCheck();
+    await refreshMsvcStatus();
   });
 
   async function loadAppVersion() {
@@ -107,8 +112,7 @@
       
       cliInstalled = true;
       
-      // Check versions immediately after finding CLI
-      await checkVersions();
+      // CLI is present; proceed with environment checks
 
       // Проверяем статус окружения сначала
       const st = await checkEnvironmentStatus();
@@ -152,8 +156,11 @@
     }
 
     try {
-      const result = await invoke('set_install_path', { path: installPath }) as {success: boolean, message?: string};
+      const result = await invoke('set_install_path', { path: installPath }) as {success: boolean, message?: string, normalized_path?: string};
       if (result.success) {
+        if (result.normalized_path) {
+          installPath = result.normalized_path;
+        }
         currentStep = 'installing';
         await startEnvironmentSetupStream();
       } else {
@@ -183,8 +190,11 @@
     }, 1000);
     
     try {
-      const result = await invoke('download_and_install_cli', { install_path: installPath }) as {success: boolean, message?: string};
+      const result = await invoke('download_and_install_cli', { install_path: installPath }) as {success: boolean, message?: string, normalized_path?: string};
       if (result.success) {
+        if (result.normalized_path) {
+          installPath = result.normalized_path;
+        }
         await testCliInstallation();
         if (cliInstalled) {
           await finishInstallation();
@@ -224,8 +234,7 @@
       const result = await invoke('test_cli_installation', { install_path: installPath }) as {success: boolean, message?: string};
       if (result.success) {
         cliInstalled = true;
-        // Check versions after successful CLI test
-        await checkVersions();
+        // CLI test ok
       } else {
         cliInstalled = false;
         if (showError) {
@@ -237,130 +246,6 @@
         installStatus = `Testing error: ${error}`;
       }
       cliInstalled = false;
-    }
-  }
-
-  async function checkVersions() {
-    if (!installPath || !cliInstalled) return;
-    
-    isCheckingVersions = true;
-    try {
-      // Get current CLI version
-      currentVersion = await invoke('get_cli_version', { install_path: installPath, installPath });
-      
-      // Get latest version from GitHub
-      latestVersion = await invoke('get_latest_version_from_github');
-      
-      // Compare versions
-      updateAvailable = compareVersions(currentVersion, latestVersion) < 0;
-    } catch (error) {
-      console.error('Error checking versions:', error);
-      currentVersion = 'Unknown';
-      latestVersion = 'Unknown';
-      updateAvailable = false;
-    } finally {
-      isCheckingVersions = false;
-    }
-  }
-
-  function compareVersions(version1: string, version2: string): number {
-    // Parse version strings properly handling post/dev/rc suffixes
-    function parseVersion(version: string) {
-      // Remove 'v' prefix if present
-      let v = version.replace(/^v/, '');
-      
-      // Split by dots and handle suffixes like .post2, .dev1, .rc1
-      const parts = v.split('.');
-      const numbers = [];
-      
-      for (const part of parts) {
-        if (/^\d+$/.test(part)) {
-          // Pure number
-          numbers.push(parseInt(part));
-        } else if (/^\d+/.test(part)) {
-          // Number with suffix like "2post2"
-          const match = part.match(/^(\d+)(.*)$/);
-          if (match) {
-            numbers.push(parseInt(match[1]));
-            // Handle suffixes: post > rc > dev
-            const suffix = match[2];
-            if (suffix.startsWith('post')) {
-              const postNum = suffix.match(/post(\d+)/);
-              numbers.push(1000 + (postNum ? parseInt(postNum[1]) : 0));
-            } else if (suffix.startsWith('rc')) {
-              const rcNum = suffix.match(/rc(\d+)/);
-              numbers.push(500 + (rcNum ? parseInt(rcNum[1]) : 0));
-            } else if (suffix.startsWith('dev')) {
-              const devNum = suffix.match(/dev(\d+)/);
-              numbers.push(100 + (devNum ? parseInt(devNum[1]) : 0));
-            }
-          }
-        }
-      }
-      
-      return numbers;
-    }
-    
-    const v1 = parseVersion(version1);
-    const v2 = parseVersion(version2);
-    
-    const maxLength = Math.max(v1.length, v2.length);
-    
-    for (let i = 0; i < maxLength; i++) {
-      const num1 = v1[i] || 0;
-      const num2 = v2[i] || 0;
-      
-      if (num1 < num2) return -1;
-      if (num1 > num2) return 1;
-    }
-    
-    return 0;
-  }
-
-  async function updateCli() {
-    if (!installPath) return;
-    
-    isUpdatingCli = true;
-    try {
-      installStatus = $_('cli.updating');
-      
-      // Use the same download and install function
-      const result = await invoke('download_and_install_cli', { installPath }) as {success: boolean, message?: string};
-      
-      if (result.success) {
-        installStatus = $_('common.success');
-        await testCliInstallation();
-        await checkVersions(); // Refresh version info after update
-      } else {
-        installStatus = `Update failed: ${result.message}`;
-      }
-    } catch (error) {
-      installStatus = `Update error: ${error}`;
-    } finally {
-      isUpdatingCli = false;
-    }
-  }
-
-  async function checkCliInstallation() {
-    if (installPath) {
-      await testCliInstallation();
-    }
-  }
-
-  async function resetInstallation() {
-    try {
-      // Clear installation path from registry
-      await invoke('clear_install_path');
-      // Reset state
-      installPath = '';
-      cliInstalled = false;
-      installedRepos = [];
-      availableRepos = [];
-      installStatus = '';
-      // Return to first step
-      currentStep = 'path-selection';
-    } catch (error) {
-      installStatus = `Reset error: ${error}`;
     }
   }
 
@@ -408,6 +293,7 @@
     envSetupProgress = { phase: 'init', done: 0, total: 0 };
     envProgressText = '';
     currentStep = 'installing';
+    lastProgressAt = Date.now();
 
     // стартуем таймер отображения времени
     installTimer = 0;
@@ -425,6 +311,7 @@
       currentToolIcon = key && toolIcons[key] ? toolIcons[key] : '🔧';
       envProgressText = $_('installation.installing_tool', { values: { tool: displayName } });
       installProgress = total ? Math.min(Math.round((done / total) * 100), 99) : 0;
+      lastProgressAt = Date.now();
     });
     const unlistenError = await listen(`env-setup-error-${eventId}`, (e: any) => {
       installStatus = $_('installation.environment_setup_failed', { values: { error: String(e.payload) } });
@@ -447,9 +334,41 @@
       unlistenFinished();
       isSettingUpEnvironment = false;
       if (installTimerInterval) { clearInterval(installTimerInterval); installTimerInterval = null; }
+      if (stallWatchInterval) { clearInterval(stallWatchInterval); stallWatchInterval = null; }
     });
 
     await invoke('setup_environment_stream', { install_path: installPath, installPath, event_id: eventId, eventId });
+
+    // Start watchdog to handle rare cases when finished event is missed
+    if (stallWatchInterval) { clearInterval(stallWatchInterval); }
+    stallWatchInterval = setInterval(async () => {
+      const secondsSince = Math.floor((Date.now() - lastProgressAt) / 1000);
+      if (secondsSince >= stallTimeoutSec) {
+        try {
+          const status = await invoke('check_environment_status', { install_path: installPath, installPath }) as {
+            environment_exists: boolean,
+            setup_completed: boolean,
+            overall_status: string
+          };
+          if (status && status.setup_completed) {
+            // consider setup completed and fast-forward
+            installProgress = 100;
+            envProgressText = $_('installation.all_installed');
+            if (stallWatchInterval) { clearInterval(stallWatchInterval); stallWatchInterval = null; }
+            if (installTimerInterval) { clearInterval(installTimerInterval); installTimerInterval = null; }
+            setTimeout(async () => {
+              currentStep = 'main-interface';
+              await loadEnvironmentAndRepos();
+            }, 500);
+          }
+        } catch (_) {
+          // ignore check errors
+        } finally {
+          // reset timer to avoid hammering
+          lastProgressAt = Date.now();
+        }
+      }
+    }, 5000) as any;
   }
 
   async function loadInstalledRepos() {
@@ -1002,6 +921,35 @@
       isInstallingUpdate = false;
     }
   }
+
+  // --- MSVC Build Tools helpers ---
+  async function refreshMsvcStatus() {
+    try {
+      const [installed, admin] = await Promise.all([
+        invoke('check_msvc_bt_installed') as Promise<boolean>,
+        invoke('is_admin') as Promise<boolean>
+      ]);
+      msvcInstalled = installed;
+      isAdminUser = admin;
+    } catch (_) {
+      msvcInstalled = false;
+      isAdminUser = false;
+    }
+  }
+
+  async function installMsvcBt() {
+    if (msvcInstalled || !isAdminUser || isInstallingMsvc) return;
+    try {
+      isInstallingMsvc = true;
+      await invoke('install_msvc_bt');
+      await refreshMsvcStatus();
+      alert($_('common.success'));
+    } catch (e) {
+      alert($_('common.error') + ': ' + String(e));
+    } finally {
+      isInstallingMsvc = false;
+    }
+  }
 </script>
 
 <main>
@@ -1340,6 +1288,29 @@
                 <button on:click={checkForUpdates}>{$_('updater.check_for_updates')}</button>
               </div>
             {/if}
+          </div>
+
+          <!-- MSVC Build Tools Section -->
+          <div class="settings-section">
+            <h2>{$_('msvc.title')}</h2>
+            {#if msvcInstalled === null}
+              <p class="info">{$_('common.loading')}</p>
+            {:else if msvcInstalled}
+              <p class="success">{$_('msvc.installed')}</p>
+            {:else}
+              <p class="warning">{$_('msvc.not_installed')}</p>
+              {#if !isAdminUser}
+                <p class="warning">{$_('msvc.not_admin')}</p>
+              {/if}
+            {/if}
+            <div class="action-buttons">
+              <button on:click={installMsvcBt} disabled={msvcInstalled || !isAdminUser || isInstallingMsvc}>
+                {#if isInstallingMsvc}
+                  <span class="spinner"></span>
+                {/if}
+                {$_('msvc.install_button')}
+              </button>
+            </div>
           </div>
 
           <div class="settings-section">
@@ -2063,6 +2034,12 @@
     transition: background 0.3s;
     font-size: 14px;
     font-weight: 500;
+  }
+
+  .action-buttons button:disabled {
+    background: #dee2e6;
+    color: #adb5bd;
+    cursor: not-allowed;
   }
 
   .action-buttons button:hover:not(:disabled) {

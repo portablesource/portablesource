@@ -120,4 +120,12 @@
     "version_latest": "✓ У вас последняя версия: v{version}",
     "version_outdated": "✗ Версия не последняя! Желательно обновить"
   }
+  ,
+  "msvc": {
+    "title": "Установка Microsoft Visual Studio Build Tools (необязательно)",
+    "installed": "✓ У вас уже установлены Build Tools",
+    "not_installed": "✗ У вас не установлены Build Tools. Если столкнетесь с ошибками сборки, возможно, стоит их установить",
+    "not_admin": "✗ Программа запущена не от имени администратора. Для установки Build Tools требуется перезапустить приложение от администратора",
+    "install_button": "Установить MSVC Build Tools"
+  }
 }

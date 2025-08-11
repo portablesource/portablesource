@@ -117,4 +117,12 @@
     "version_latest": "✓ You have the latest version: v{version}",
     "version_outdated": "✗ Version is outdated! Update recommended"
   }
+  ,
+  "msvc": {
+    "title": "Microsoft Visual Studio Build Tools (optional)",
+    "installed": "✓ Build Tools are already installed",
+    "not_installed": "✗ Build Tools are not installed. If you encounter build errors, you may need to install them",
+    "not_admin": "✗ The app is not running as Administrator. Restart as administrator to install Build Tools",
+    "install_button": "Install MSVC Build Tools"
+  }
 }

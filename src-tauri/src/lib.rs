@@ -39,6 +39,8 @@ async fn proxy_request(url: String) -> Result<String, String> {
 struct InstallResult {
     success: bool,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    normalized_path: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -70,16 +72,32 @@ struct UiProgressEvent {
 
 #[tauri::command]
 async fn set_install_path(path: String) -> Result<InstallResult, String> {
+    // Normalize to include leaf 'portablesource' folder to ensure stable structure
+    let mut target = PathBuf::from(&path);
+    if !target
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|n| n.eq_ignore_ascii_case("portablesource"))
+        .unwrap_or(false)
+    {
+        target = target.join("portablesource");
+    }
+
+    fs::create_dir_all(&target).map_err(|e| format!("Failed to create directory: {}", e))?;
+
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    let key = hkcu.create_subkey("Software\\PortableSource")
+    let key = hkcu
+        .create_subkey("Software\\PortableSource")
         .map_err(|e| format!("Failed to create registry key: {}", e))?;
-    
-    key.0.set_value("InstallPath", &path)
+
+    key.0
+        .set_value("InstallPath", &target.to_string_lossy().to_string())
         .map_err(|e| format!("Failed to set registry value: {}", e))?;
-    
+
     Ok(InstallResult {
         success: true,
         message: "Installation path saved successfully".to_string(),
+        normalized_path: Some(target.to_string_lossy().to_string()),
     })
 }
 
@@ -137,7 +155,15 @@ async fn find_cli_installation() -> Result<String, String> {
 
 #[tauri::command]
 async fn download_and_install_cli(state: tauri::State<'_, AppState>, install_path: String) -> Result<InstallResult, String> {
-    let install_dir = PathBuf::from(&install_path);
+    let mut install_dir = PathBuf::from(&install_path);
+    if !install_dir
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|n| n.eq_ignore_ascii_case("portablesource"))
+        .unwrap_or(false)
+    {
+        install_dir = install_dir.join("portablesource");
+    }
     fs::create_dir_all(&install_dir)
         .map_err(|e| format!("Failed to create install directory: {}", e))?;
     
@@ -162,18 +188,18 @@ async fn download_and_install_cli(state: tauri::State<'_, AppState>, install_pat
     } else {
         *state.config.lock().map_err(|_| "State poisoned")? = cfg;
     }
-    Ok(InstallResult { success: true, message: "Environment installed successfully".to_string() })
+    Ok(InstallResult { success: true, message: "Environment installed successfully".to_string(), normalized_path: Some(install_dir.to_string_lossy().to_string()) })
 }
 
 #[tauri::command]
 async fn test_cli_installation(state: tauri::State<'_, AppState>, install_path: String) -> Result<InstallResult, String> {
     let install_dir = PathBuf::from(install_path);
     if !install_dir.exists() {
-        return Ok(InstallResult { success: false, message: "Install path not found".into() });
+        return Ok(InstallResult { success: false, message: "Install path not found".into(), normalized_path: None });
     }
     // Проверим доступность базовых каталогов/конфига через библиотеку
     let _guard = state.config.lock().map_err(|_| "State poisoned")?;
-    Ok(InstallResult { success: true, message: "Library available".into() })
+    Ok(InstallResult { success: true, message: "Library available".into(), normalized_path: Some(install_dir.to_string_lossy().to_string()) })
 }
 
 #[tauri::command]
@@ -614,12 +640,14 @@ async fn clear_install_path() -> Result<InstallResult, String> {
             Ok(InstallResult {
                 success: true,
                 message: "Installation path cleared successfully".to_string(),
+                normalized_path: None,
             })
         }
         Err(_) => {
             Ok(InstallResult {
                 success: true,
                 message: "Registry key not found, nothing to clear".to_string(),
+                normalized_path: None,
             })
         }
     }
@@ -646,11 +674,11 @@ async fn delete_repository(state: tauri::State<'_, AppState>, install_path: Stri
         }
         *state.config.lock().map_err(|_| "State poisoned")? = cfg;
         match result {
-            Ok(_) => Ok(InstallResult { success: true, message: format!("Repository '{}' deleted successfully", repo_name_for_message) }),
-            Err(e) => Ok(InstallResult { success: false, message: format!("Failed to delete repository: {}", e) }),
+            Ok(_) => Ok(InstallResult { success: true, message: format!("Repository '{}' deleted successfully", repo_name_for_message), normalized_path: None }),
+            Err(e) => Ok(InstallResult { success: false, message: format!("Failed to delete repository: {}", e), normalized_path: None }),
         }
     } else {
-        Ok(InstallResult { success: false, message: "Use removeAllRepos function for deleting all repositories".into() })
+        Ok(InstallResult { success: false, message: "Use removeAllRepos function for deleting all repositories".into(), normalized_path: None })
     }
 }
 
@@ -747,6 +775,40 @@ async fn install_update(app_handle: tauri::AppHandle) -> Result<(), String> {
     }
 }
 
+// --- MSVC Build Tools support & admin check ---
+#[tauri::command]
+async fn check_msvc_bt_installed() -> Result<bool, String> {
+    Ok(ps_utils::check_msvc_build_tools_installed())
+}
+
+#[tauri::command]
+async fn install_msvc_bt() -> Result<(), String> {
+    ps_utils::install_msvc_build_tools().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn is_admin() -> Result<bool, String> {
+    // Windows PowerShell check; on other OS always false
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        let output = Command::new("powershell")
+            .args([
+                "-Command",
+                "[bool]([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
+            ])
+            .output()
+            .map_err(|e| format!("Failed to run PowerShell: {}", e))?;
+        let out = String::from_utf8_lossy(&output.stdout).to_string();
+        let is_admin = out.to_lowercase().contains("true");
+        return Ok(is_admin);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(false)
+    }
+}
+
 #[tauri::command]
 async fn get_system_locale() -> Result<String, String> {
     #[cfg(target_os = "windows")]
@@ -806,6 +868,7 @@ async fn complete_uninstall(state: tauri::State<'_, AppState>) -> Result<Install
             return Ok(InstallResult {
                 success: false,
                 message: "Installation path not found in registry".to_string(),
+                normalized_path: None,
             });
         }
     };
@@ -825,12 +888,14 @@ async fn complete_uninstall(state: tauri::State<'_, AppState>) -> Result<Install
                 Ok(InstallResult {
                     success: true,
                     message: "Thank you for using this software! =}".to_string(),
+                    normalized_path: None,
                 })
             }
             Err(e) => {
                 Ok(InstallResult {
                     success: false,
                     message: format!("Failed to remove installation directory: {}", e),
+                    normalized_path: None,
                 })
             }
         }
@@ -841,6 +906,7 @@ async fn complete_uninstall(state: tauri::State<'_, AppState>) -> Result<Install
         Ok(InstallResult {
             success: true,
             message: "Thank you for using this software! =}".to_string(),
+            normalized_path: None,
         })
     }
 }
@@ -886,7 +952,10 @@ pub fn run() {
             get_system_locale,
             get_app_version,
             check_for_updates,
-            install_update
+            install_update,
+            check_msvc_bt_installed,
+            install_msvc_bt,
+            is_admin
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
