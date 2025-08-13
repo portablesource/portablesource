@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { locale, locales } from 'svelte-i18n';
+	import { locale } from 'svelte-i18n';
 
 	function changeLanguage(lang: string) {
 		$locale = lang;

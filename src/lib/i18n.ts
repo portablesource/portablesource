@@ -35,7 +35,4 @@ async function initializeI18n() {
 	}
 }
 
-// Initialize i18n
-initializeI18n().catch(console.error);
-
 export { initializeI18n };

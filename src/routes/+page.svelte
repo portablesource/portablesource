@@ -87,9 +87,11 @@
   export const host = "portables.dev";
 
   onMount(async () => {
-    await loadAppVersion();
-    await performInitialCheck();
-    await refreshMsvcStatus();
+    await Promise.all([
+      loadAppVersion(),
+      performInitialCheck(),
+      refreshMsvcStatus()
+    ]);
   });
 
   async function loadAppVersion() {

@@ -308,16 +308,13 @@ async fn run_command_stream(
     let app_handle_stdout = app_handle.clone();
     let event_id_stdout = event_id.clone();
     
-    // Handle stdout in a separate task
-    let stdout_task = tokio::spawn(async move {
+    // Handle stdout in a separate thread
+    let stdout_handle = std::thread::spawn(move || {
         for line in stdout_reader.lines() {
             if let Ok(line) = line {
                 let _ = app_handle_stdout.emit(
                     &format!("command-output-{}", event_id_stdout),
-                    StreamOutput {
-                        stream: "stdout".to_string(),
-                        data: line,
-                    },
+                    StreamOutput { stream: "stdout".to_string(), data: line },
                 );
             }
         }
@@ -326,16 +323,13 @@ async fn run_command_stream(
     let app_handle_stderr = app_handle.clone();
     let event_id_stderr = event_id.clone();
     
-    // Handle stderr in a separate task
-    let stderr_task = tokio::spawn(async move {
+    // Handle stderr in a separate thread
+    let stderr_handle = std::thread::spawn(move || {
         for line in stderr_reader.lines() {
             if let Ok(line) = line {
                 let _ = app_handle_stderr.emit(
                     &format!("command-output-{}", event_id_stderr),
-                    StreamOutput {
-                        stream: "stderr".to_string(),
-                        data: line,
-                    },
+                    StreamOutput { stream: "stderr".to_string(), data: line },
                 );
             }
         }
@@ -344,8 +338,9 @@ async fn run_command_stream(
     // Wait for the process to finish
     let status = child.wait().map_err(|e| format!("Failed to wait for command: {}", e))?;
     
-    // Wait for both tasks to complete
-    let _ = tokio::join!(stdout_task, stderr_task);
+    // Ensure background readers are finished
+    let _ = stdout_handle.join();
+    let _ = stderr_handle.join();
     
     // Emit completion event
     let _ = app_handle.emit(

@@ -27,6 +27,13 @@ jobs:
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup sccache
+        uses: mozilla-actions/sccache@v0.0.3
+
+      - name: Enable sccache for Rust
+        run: echo "RUSTC_WRAPPER=sccache" >> $Env:GITHUB_ENV
+        shell: pwsh
+
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
