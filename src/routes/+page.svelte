@@ -84,7 +84,7 @@
   let showInstallNotification = false;
   let installedRepoName = '';
 
-  export const host = "portables.dev";
+  export const host = "server.portables.dev";
 
   onMount(async () => {
     await loadAppVersion();

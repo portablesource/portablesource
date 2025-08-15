@@ -25,4 +25,11 @@ const updatedCargoToml = cargoToml.replace(/^version = ".*"$/m, `version = "${ve
 fs.writeFileSync('src-tauri/Cargo.toml', updatedCargoToml);
 console.log('✓ Updated src-tauri/Cargo.toml');
 
+// Update package-lock.json
+const packageLockJson = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+packageLockJson.version = version;
+packageLockJson.packages[''].version = version;
+fs.writeFileSync('package-lock.json', JSON.stringify(packageLockJson, null, '\t'));
+console.log('✓ Updated package-lock.json');
+
 console.log('Version sync completed!');
