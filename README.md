@@ -8,7 +8,7 @@
 
 ---
 
-## Tired of slow, bloated, and insecure AI tools? So was I.
+## Tired of slow and bloated AI tools? So was I.
 
 Tools like Pinokio are popular, but they come with a price: messy architectures, questionable security practices, and a complete lack of accountability from anonymous developers. **This is unacceptable.**
 
