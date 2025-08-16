@@ -1,6 +1,6 @@
 [package]
 name = "portablesource"
-version = "0.0.12"
+version = "0.0.13"
 description = "App for easy install AI"
 authors = ["NeuroDonu"]
 license = ""
