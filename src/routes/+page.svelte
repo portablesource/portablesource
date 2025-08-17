@@ -84,9 +84,58 @@
   let showInstallNotification = false;
   let installedRepoName = '';
 
+  // Theme state
+  let currentTheme = 'system'; // 'light', 'dark', 'system'
+  let isDarkMode = false;
+
+  // Theme management functions
+  function getSystemTheme(): boolean {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  function applyTheme(theme: string) {
+    const html = document.documentElement;
+    
+    if (theme === 'system') {
+      isDarkMode = getSystemTheme();
+    } else {
+      isDarkMode = theme === 'dark';
+    }
+    
+    if (isDarkMode) {
+      html.setAttribute('data-theme', 'dark');
+    } else {
+      html.removeAttribute('data-theme');
+    }
+    
+    // Save theme preference to localStorage
+    localStorage.setItem('theme', theme);
+  }
+
+  function setTheme(theme: string) {
+    currentTheme = theme;
+    applyTheme(theme);
+  }
+
+  function initializeTheme() {
+    // Load theme from localStorage or default to 'system'
+    const savedTheme = localStorage.getItem('theme') || 'system';
+    currentTheme = savedTheme;
+    applyTheme(savedTheme);
+    
+    // Listen for system theme changes
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    mediaQuery.addEventListener('change', () => {
+      if (currentTheme === 'system') {
+        applyTheme('system');
+      }
+    });
+  }
+
   export const host = "server.portables.dev";
 
   onMount(async () => {
+    initializeTheme();
     await loadAppVersion();
     await performInitialCheck();
     await refreshMsvcStatus();
@@ -609,6 +658,22 @@
     if (!v) { closeAddRepoModal(); return; }
     closeAddRepoModal();
     installRepoFromInput(v);
+  }
+
+  // Complete uninstall modal
+  let showUninstallModal = false;
+  let uninstallConfirmText = '';
+  function openUninstallModal() {
+    uninstallConfirmText = '';
+    showUninstallModal = true;
+  }
+  function closeUninstallModal() { showUninstallModal = false; }
+  function confirmUninstallModal() {
+    if (uninstallConfirmText.toLowerCase() !== 'delete') {
+      return;
+    }
+    closeUninstallModal();
+    completeUninstall();
   }
 
   // Check repository installation status by folder presence
@@ -1173,6 +1238,8 @@
              </div>
            </div>
          {/if}
+
+
          
          <!-- Installation Status Display -->
          {#if installStatus && isInstallingRepo}
@@ -1333,6 +1400,33 @@
             </div>
           </div>
 
+          <div class="settings-section">
+            <h2>🎨 {$_('settings.theme')}</h2>
+            <div class="theme-selector">
+              <button 
+                class="theme-btn" 
+                class:active={currentTheme === 'light'}
+                on:click={() => setTheme('light')}
+              >
+                ☀️ {$_('settings.theme_light')}
+              </button>
+              <button 
+                class="theme-btn" 
+                class:active={currentTheme === 'dark'}
+                on:click={() => setTheme('dark')}
+              >
+                🌙 {$_('settings.theme_dark')}
+              </button>
+              <button 
+                class="theme-btn" 
+                class:active={currentTheme === 'system'}
+                on:click={() => setTheme('system')}
+              >
+                🖥️ {$_('settings.theme_system')}
+              </button>
+            </div>
+          </div>
+
            <div class="settings-section">
               <h2>{$_('repositories.repository_management')}</h2>
               <div class="action-buttons">
@@ -1347,7 +1441,7 @@
                 {$_('settings.danger_warning')}
               </p>
               <div class="action-buttons">
-                <button class="danger-btn" on:click={completeUninstall}>
+                <button class="danger-btn" on:click={openUninstallModal}>
                   🗑️ {$_('settings.complete_uninstall')}
                 </button>
               </div>
@@ -1356,6 +1450,55 @@
       {/if}
     {/if}
   </div>
+
+  <!-- Complete Uninstall Modal - Global -->
+  {#if showUninstallModal}
+    <div class="modal-backdrop" role="button" tabindex="0" aria-label="Close modal"
+         on:click={closeUninstallModal}
+         on:keydown={(e) => { if (e.key==='Escape') closeUninstallModal(); }}></div>
+    <div class="modal-card danger-modal" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <h3>⚠️ {$_('settings.confirm_uninstall')}</h3>
+      </div>
+      <div class="modal-body">
+        <div class="danger-warning-box">
+          <p class="danger-text">{$_('settings.uninstall_warning_text')}</p>
+          <ul class="uninstall-list">
+            <li>• {$_('settings.uninstall_items_list.repositories')}</li>
+            <li>• {$_('settings.uninstall_items_list.environments')}</li>
+            <li>• {$_('settings.uninstall_items_list.program_files')}</li>
+            <li>• {$_('settings.uninstall_items_list.registry')}</li>
+          </ul>
+          <p class="final-warning">{$_('settings.uninstall_irreversible')}</p>
+        </div>
+        <div class="confirmation-input">
+          <p class="confirm-instruction">{$_('settings.uninstall_confirm_question')}</p>
+          <p class="type-instruction">{$_('settings.uninstall_type_delete')}</p>
+          <input 
+            type="text" 
+            bind:value={uninstallConfirmText} 
+            placeholder={$_('settings.uninstall_placeholder')}
+            class="danger-input"
+            on:keydown={(e) => { 
+              if (e.key==='Enter' && uninstallConfirmText.toLowerCase() === 'delete') confirmUninstallModal(); 
+              if (e.key==='Escape') closeUninstallModal(); 
+            }} 
+          />
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" on:click={closeUninstallModal}>{$_('settings.uninstall_cancel')}</button>
+        <button 
+          class="btn-danger" 
+          class:disabled={uninstallConfirmText.toLowerCase() !== 'delete'}
+          disabled={uninstallConfirmText.toLowerCase() !== 'delete'}
+          on:click={confirmUninstallModal}
+        >
+          🗑️ {$_('settings.uninstall_button')}
+        </button>
+      </div>
+    </div>
+  {/if}
 </main>
 
 <style>
@@ -1363,7 +1506,7 @@
   :global(body) {
     margin: 0;
     padding: 0;
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    background: var(--bg-primary);
     min-height: 100vh;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     overflow-x: hidden;
@@ -1380,7 +1523,7 @@
     top: 20px;
     left: 20px;
     z-index: 1001;
-    background: rgba(255, 255, 255, 0.9);
+    background: var(--bg-hamburger);
     border: none;
     border-radius: 8px;
     padding: 12px;
@@ -1390,14 +1533,14 @@
   }
 
   .hamburger-btn:hover {
-    background: white;
+    background: var(--card-bg);
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
   }
 
   .hamburger-line {
     width: 20px;
     height: 2px;
-    background: #495057;
+    background: var(--text-dark);
     margin: 4px 0;
     transition: 0.3s;
   }
@@ -1409,14 +1552,14 @@
     left: 0;
     width: 300px;
     height: 100vh;
-    background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
+    background: var(--bg-primary);
     box-shadow: 2px 0 15px rgba(0, 0, 0, 0.08);
     transform: translateX(-100%);
     transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
     will-change: transform;
     contain: paint;
     z-index: 1000;
-    border-right: 1px solid #dee2e6;
+    border-right: 1px solid var(--border-color);
     backface-visibility: hidden;
   }
 
@@ -1432,7 +1575,7 @@
   }
 
   .sidebar-content h3 {
-    color: #495057;
+    color: var(--text-primary);
     font-weight: 600;
     font-size: 1.5rem;
     margin-bottom: 30px;
@@ -1453,20 +1596,20 @@
     border-radius: 12px;
     text-align: left;
     font-size: 16px;
-    color: #6c757d;
+    color: var(--text-muted-light);
     cursor: pointer;
     transition: background 160ms ease, color 160ms ease, transform 160ms ease;
     will-change: transform;
   }
 
   .nav-item:hover {
-    background: #e9ecef;
-    color: #495057;
+    background: var(--bg-tertiary);
+    color: var(--text-dark);
   }
 
   .nav-item.active {
-    background: linear-gradient(135deg, #007acc 0%, #005a9e 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--button-primary) 0%, var(--button-primary-hover) 100%);
+    color: var(--text-primary);
     box-shadow: 0 2px 8px rgba(0, 122, 204, 0.3);
   }
 
@@ -1476,17 +1619,17 @@
   }
 
   .settings-btn {
-    background: #f8f9fa !important;
-    border: 1px solid #dee2e6 !important;
+    background: var(--bg-tertiary) !important;
+    border: 1px solid var(--card-border) !important;
   }
 
   .settings-btn:hover {
-    background: #e9ecef !important;
+    background: var(--bg-hover) !important;
   }
 
   .settings-btn.active {
-    background: linear-gradient(135deg, #6c757d 0%, #495057 100%) !important;
-    border-color: #495057 !important;
+    background: linear-gradient(135deg, var(--text-muted-light) 0%, var(--text-dark) 100%) !important;
+    border-color: var(--text-dark) !important;
   }
 
   /* Overlay */
@@ -1496,7 +1639,7 @@
     left: 0;
     width: 100vw;
     height: 100vh;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--overlay-bg);
     z-index: 999;
     animation: fadeIn 180ms ease forwards;
     will-change: opacity;
@@ -1520,7 +1663,7 @@
   }
 
   .content-header h1 {
-    color: #495057;
+    color: var(--text-dark);
     font-weight: 300;
     font-size: 2.5rem;
     margin: 0;
@@ -1532,22 +1675,22 @@
     margin: 0 auto;
     text-align: center;
     padding: 60px 40px;
-    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    background: var(--card-bg);
     border-radius: 20px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-    border: 1px solid #dee2e6;
+    border: 1px solid var(--card-border);
   }
 
   .step-title {
     font-size: 32px;
-    color: #495057;
+    color: var(--text-primary);
     margin-bottom: 15px;
     font-weight: 300;
     letter-spacing: -0.5px;
   }
   .nice-title {
     letter-spacing: 0.3px;
-    background: linear-gradient(90deg, #495057, #007acc);
+    background: linear-gradient(90deg, var(--text-primary), var(--accent-color));
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
@@ -1555,7 +1698,7 @@
 
   .step-description {
     font-size: 18px;
-    color: #6c757d;
+    color: var(--text-secondary);
     margin-bottom: 40px;
     line-height: 1.6;
   }
@@ -1565,11 +1708,11 @@
     gap: 20px;
     margin-bottom: 40px;
     align-items: stretch;
-    background: #ffffff;
+    background: var(--input-bg);
     padding: 8px;
     border-radius: 16px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-    border: 2px solid #e9ecef;
+    border: 2px solid var(--input-border);
   }
 
   .path-input-container input {
@@ -1579,21 +1722,21 @@
     border: none;
     border-radius: 12px;
     background: transparent;
-    color: #495057;
+    color: var(--text-dark);
     outline: none;
     font-weight: 400;
   }
 
   .path-input-container input::placeholder {
-    color: #adb5bd;
+    color: var(--text-light-gray);
     font-weight: 300;
   }
 
   .path-input-container button {
     padding: 20px 32px;
     font-size: 16px;
-    background: linear-gradient(135deg, #adb5bd 0%, #868e96 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--text-light-gray) 0%, var(--text-muted) 100%);
+    color: var(--text-primary);
     border: none;
     border-radius: 12px;
     font-weight: 500;
@@ -1602,14 +1745,14 @@
   }
 
   .path-input-container button:hover:not(:disabled) {
-    background: linear-gradient(135deg, #868e96 0%, #6c757d 100%);
+    background: linear-gradient(135deg, var(--text-muted) 0%, var(--text-dark) 100%);
     transform: translateY(-2px);
     box-shadow: 0 4px 15px rgba(173, 181, 189, 0.4);
   }
 
   .confirm-button {
-    background: linear-gradient(135deg, #adb5bd 0%, #868e96 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--text-light-gray) 0%, var(--text-muted) 100%);
+    color: var(--text-primary);
     border: none;
     padding: 18px 48px;
     font-size: 18px;
@@ -1622,14 +1765,14 @@
   }
 
   .confirm-button:hover:not(:disabled) {
-    background: linear-gradient(135deg, #868e96 0%, #6c757d 100%);
+    background: linear-gradient(135deg, var(--text-muted) 0%, var(--text-dark) 100%);
     transform: translateY(-3px);
     box-shadow: 0 8px 25px rgba(173, 181, 189, 0.4);
   }
 
   .confirm-button:disabled {
-    background: #dee2e6;
-    color: #adb5bd;
+    background: var(--bg-tertiary);
+    color: var(--text-light-gray);
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
@@ -1647,11 +1790,11 @@
   }
 
   .repo-card {
-    background: white;
+    background: var(--card-bg);
     padding: 25px;
     border-radius: 16px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-    border: 1px solid #e9ecef;
+    border: 1px solid var(--card-border);
     transition: all 0.3s ease;
   }
 
@@ -1661,14 +1804,14 @@
   }
 
   .repo-card h3 {
-    color: #495057;
+    color: var(--text-dark);
     font-size: 1.3rem;
     margin-bottom: 10px;
     font-weight: 600;
   }
 
   .repo-card p {
-    color: #6c757d;
+    color: var(--text-muted-light);
     line-height: 1.5;
     margin-bottom: 20px;
   }
@@ -1682,17 +1825,17 @@
   }
 
   .download-count {
-    color: #28a745;
+    color: var(--success-color);
     font-weight: 500;
   }
 
   .author {
-    color: #6c757d;
+    color: var(--text-muted-light);
   }
 
   .install-repo-btn {
-    background: linear-gradient(135deg, #007acc 0%, #005a9e 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--button-primary) 0%, var(--button-primary-hover) 100%);
+    color: var(--text-primary);
     border: none;
     padding: 12px 24px;
     border-radius: 8px;
@@ -1713,14 +1856,14 @@
   }
 
   .install-repo-btn.installing {
-    background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+    background: linear-gradient(135deg, var(--text-muted-light) 0%, var(--text-dark) 100%);
   }
 
 
 
   .open-repo-btn {
-    background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--button-primary) 0%, var(--button-primary-hover) 100%);
+    color: var(--text-primary);
     border: none;
     padding: 12px 24px;
     border-radius: 8px;
@@ -1732,14 +1875,14 @@
   }
 
   .open-repo-btn:hover {
-    background: linear-gradient(135deg, #138496 0%, #117a8b 100%);
+    background: linear-gradient(135deg, var(--button-primary-hover) 0%, var(--button-primary-active) 100%);
     transform: translateY(-1px);
     box-shadow: 0 4px 15px rgba(23, 162, 184, 0.4);
   }
 
   /* Modal styles */
   .modal-backdrop {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1100;
+    position: fixed; inset: 0; background: var(--modal-backdrop); z-index: 1100;
     animation: fadeIn 160ms ease;
   }
   .modal-card {
@@ -1747,23 +1890,151 @@
     left: 50%; top: 50%; transform: translate(-50%, -50%);
     width: min(520px, 92vw);
     max-height: 80vh;
-    background: white; border-radius: 16px; padding: 20px;
+    background: var(--card-bg); border-radius: 16px; padding: 20px;
     box-shadow: 0 20px 60px rgba(0,0,0,0.25);
-    border: 1px solid #e9ecef;
+    border: 1px solid var(--card-border);
     animation: fadeIn 180ms ease;
     overflow: auto;
   }
-  .modal-card h3 { margin: 0 0 8px 0; color: #343a40; font-weight: 700; }
-  .modal-sub { margin: 0 0 14px 0; color: #6c757d; }
+  .modal-card h3 { margin: 0 0 8px 0; color: var(--text-primary); font-weight: 700; }
+  .modal-sub { margin: 0 0 14px 0; color: var(--text-secondary); }
   .modal-card input {
-    width: 100%; padding: 12px 14px; border: 1px solid #ced4da; border-radius: 10px; outline: none;
+    width: 100%; padding: 12px 14px; border: 1px solid var(--input-border); border-radius: 10px; outline: none;
+    font-size: 14px; background: var(--input-bg); color: var(--text-primary);
+  }
+  .modal-card input:focus { border-color: var(--input-focus); box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.15); }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
+  .btn-secondary { background: var(--button-secondary); border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; color: var(--button-secondary-text); }
+  .btn-primary { background: var(--button-primary); color: var(--text-primary); border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; }
+  .btn-primary:hover { background: var(--button-primary-hover); }
+
+  /* Danger Modal Styles */
+  .danger-modal {
+    border: 2px solid var(--button-danger);
+    box-shadow: 0 20px 60px rgba(220, 53, 69, 0.3);
+  }
+  
+  .modal-header {
+    border-bottom: 2px solid var(--danger-color);
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+  }
+  
+  .modal-header h3 {
+    color: var(--danger-color) !important;
+    font-size: 20px;
+    font-weight: 700;
+    margin: 0;
+  }
+  
+  .modal-body {
+    margin-bottom: 20px;
+  }
+  
+  .danger-warning-box {
+    background: linear-gradient(135deg, var(--bg-danger-light) 0%, var(--bg-danger-lighter) 100%);
+    border: 1px solid #dc3545;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  
+  .danger-text {
+    color: var(--text-error-dark);
+    font-weight: 600;
+    margin: 0 0 15px 0;
+    font-size: 16px;
+  }
+  
+  .uninstall-list {
+    color: var(--text-error-dark);
+    margin: 15px 0;
+    padding-left: 0;
+    list-style: none;
+  }
+  
+  .uninstall-list li {
+    margin: 8px 0;
+    font-weight: 500;
+  }
+  
+  .final-warning {
+    color: var(--danger-color);
+    font-weight: 700;
+    font-size: 18px;
+    text-align: center;
+    margin: 20px 0 0 0;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  
+  .confirmation-input {
+    background: var(--bg-primary);
+    border: 2px solid var(--danger-color);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  
+  .confirm-instruction {
+    color: var(--text-dark-gray);
+    font-weight: 600;
+    margin: 0 0 10px 0;
+    font-size: 16px;
+  }
+  
+  .type-instruction {
+    color: var(--text-muted-light);
+    margin: 0 0 15px 0;
     font-size: 14px;
   }
-  .modal-card input:focus { border-color: #007acc; box-shadow: 0 0 0 3px rgba(0,122,204,0.15); }
-  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
-  .btn-secondary { background: #e9ecef; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; color: #495057; }
-  .btn-primary { background: #007acc; color: white; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; }
-  .btn-primary:hover { background: #005a9e; }
+  
+  .danger-input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid var(--danger-color);
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    outline: none;
+    transition: all 0.3s ease;
+  }
+  
+  .danger-input:focus {
+    border-color: var(--border-error);
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.25);
+  }
+  
+  .btn-danger {
+    background: linear-gradient(135deg, var(--danger-color) 0%, var(--button-danger-hover) 100%);
+    color: var(--text-primary);
+    border: 2px solid var(--danger-color);
+    padding: 12px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 16px;
+    transition: all 0.3s ease;
+  }
+  
+  .btn-danger:hover:not(:disabled) {
+    background: linear-gradient(135deg, var(--button-danger-hover) 0%, var(--border-error) 100%);
+    border-color: var(--border-error);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(220, 53, 69, 0.4);
+  }
+  
+  .btn-danger.disabled,
+  .btn-danger:disabled {
+    background: var(--text-muted-light);
+    border-color: var(--text-muted-light);
+    cursor: not-allowed;
+    opacity: 0.6;
+    transform: none;
+    box-shadow: none;
+  }
 
   /* Add by URL CTA */
   .add-repo-cta { display: flex; justify-content: center; margin: 20px 0 20px 0; }
@@ -1771,8 +2042,8 @@
     padding: 14px 20px;
     border-radius: 12px;
     border: none;
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-    color: #fff;
+    background: linear-gradient(135deg, var(--success-color) 0%, var(--success-hover) 100%);
+    color: var(--text-primary);
     font-size: 16px;
     font-weight: 600;
     cursor: pointer;
@@ -1797,20 +2068,20 @@
   .empty-state {
     text-align: center;
     padding: 60px 20px;
-    background: white;
+    background: var(--card-bg);
     border-radius: 16px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
   }
 
   .empty-state p {
-    color: #6c757d;
+    color: var(--text-muted-light);
     font-size: 1.1rem;
     margin-bottom: 20px;
   }
 
   .empty-state button {
-    background: linear-gradient(135deg, #007acc 0%, #005a9e 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--button-primary) 0%, var(--button-primary-hover) 100%);
+    color: var(--text-primary);
     border: none;
     padding: 12px 24px;
     border-radius: 8px;
@@ -1826,19 +2097,19 @@
   }
 
   .installed-repo-item {
-    background: white;
+    background: var(--card-bg);
     padding: 20px;
     border-radius: 12px;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
     will-change: transform;
-    border: 1px solid #e9ecef;
+    border: 1px solid var(--card-border);
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
 
   .installed-repo-item h3 {
-    color: #495057;
+    color: var(--text-dark);
     margin: 0;
     font-size: 1.1rem;
     font-weight: 600;
@@ -1849,13 +2120,13 @@
     border-radius: 999px;
     font-size: 12px;
     font-weight: 600;
-    color: #155724;
-    background: #d4edda;
-    border: 1px solid #c3e6cb;
+    color: var(--repo-badge-success-text);
+    background: var(--repo-badge-success);
+    border: 1px solid var(--repo-badge-success-border);
   }
-  .repo-source-badge.github { color: #0b3d91; background: #e0ecff; border-color: #c3d7ff; }
-  .repo-source-badge.git { color: #8a2c0b; background: #ffe9e0; border-color: #ffd1c2; }
-  .repo-source-badge.server { color: #155724; background: #d4edda; border-color: #c3e6cb; }
+  .repo-source-badge.github { color: var(--text-github); background: var(--bg-github); border-color: var(--border-github); }
+  .repo-source-badge.git { color: var(--text-git); background: var(--bg-git); border-color: var(--border-git); }
+  .repo-source-badge.server { color: var(--repo-badge-success-text); background: var(--repo-badge-success); border-color: var(--repo-badge-success-border); }
 
   .repo-actions {
     display: flex;
@@ -1874,18 +2145,18 @@
   }
 
   .launch-btn {
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--success-color) 0%, var(--success-hover) 100%);
+    color: var(--text-primary);
   }
 
   .update-btn {
-    background: linear-gradient(135deg, #007acc 0%, #005a9e 100%);
-    color: white;
+    background: var(--button-primary);
+    color: var(--text-primary);
   }
 
   .remove-btn {
-    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-    color: white;
+    background: var(--button-danger);
+    color: var(--text-primary);
   }
 
   .launch-btn:hover, .update-btn:hover, .remove-btn:hover {
@@ -1900,16 +2171,16 @@
   }
 
   .settings-section {
-    background: white;
+    background: var(--card-bg);
     padding: 30px;
     border-radius: 12px;
     margin-bottom: 20px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-    border: 1px solid #e9ecef;
+    border: 1px solid var(--card-border);
   }
 
   .settings-section h2 {
-    color: #495057;
+    color: var(--text-dark);
     font-size: 1.3rem;
     margin-bottom: 15px;
     font-weight: 600;
@@ -1924,15 +2195,17 @@
   .path-selector input {
     flex: 1;
     padding: 12px 16px;
-    border: 1px solid #dee2e6;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     font-size: 14px;
+    background: var(--input-bg);
+    color: var(--text-color);
   }
 
   .path-selector button {
     padding: 12px 24px;
-    background: #007acc;
-    color: white;
+    background: var(--button-primary);
+    color: var(--text-primary);
     border: none;
     border-radius: 8px;
     cursor: pointer;
@@ -1940,7 +2213,7 @@
   }
 
   .path-selector button:hover:not(:disabled) {
-    background: #005a9e;
+    background: var(--button-primary-hover);
   }
 
   .action-buttons {
@@ -1951,8 +2224,8 @@
 
   .action-buttons button {
     padding: 10px 20px;
-    background: #007acc;
-    color: white;
+    background: var(--button-primary);
+    color: var(--text-primary);
     border: none;
     border-radius: 6px;
     cursor: pointer;
@@ -1960,38 +2233,38 @@
   }
 
   .reset-btn {
-    background: #dc3545 !important;
+    background: var(--danger-color) !important;
   }
 
   .reset-btn:hover:not(:disabled) {
-    background: #c82333 !important;
+    background: var(--button-danger-hover) !important;
   }
 
   /* Danger Zone Styles */
   .danger-section {
-    border: 2px solid #dc3545 !important;
-    background: linear-gradient(135deg, #fff5f5 0%, #ffe6e6 100%) !important;
+    border: 2px solid var(--danger-color) !important;
+    background: linear-gradient(135deg, var(--bg-danger-light) 0%, var(--bg-danger-lighter) 100%) !important;
   }
 
   .danger-section h2 {
-    color: #dc3545 !important;
+    color: var(--danger-color) !important;
     font-weight: 700;
   }
 
   .danger-warning {
-    color: #721c24;
+    color: var(--text-error-dark);
     font-weight: 500;
     margin: 15px 0;
     padding: 15px;
-    background: rgba(220, 53, 69, 0.1);
+    background: var(--bg-danger-alpha);
     border-radius: 8px;
-    border-left: 4px solid #dc3545;
+    border-left: 4px solid var(--danger-color);
   }
 
   .danger-btn {
-    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%) !important;
-    color: white !important;
-    border: 2px solid #dc3545 !important;
+    background: linear-gradient(135deg, var(--danger-color) 0%, var(--button-danger-hover) 100%) !important;
+    color: var(--text-primary) !important;
+    border: 2px solid var(--danger-color) !important;
     font-weight: 600 !important;
     font-size: 16px !important;
     padding: 12px 24px !important;
@@ -1999,20 +2272,20 @@
   }
 
   .danger-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%) !important;
-    border-color: #a71e2a !important;
+    background: linear-gradient(135deg, var(--button-danger-hover) 0%, var(--button-danger-active) 100%) !important;
+    border-color: var(--button-danger-active) !important;
     transform: translateY(-2px) !important;
-    box-shadow: 0 6px 20px rgba(220, 53, 69, 0.4) !important;
+    box-shadow: 0 6px 20px var(--shadow-danger) !important;
   }
 
   .success {
-    color: #28a745;
+    color: var(--success-color);
     font-weight: bold;
     margin: 10px 0;
   }
 
   .warning {
-    color: #ffc107;
+    color: var(--warning-color);
     font-weight: bold;
     margin: 10px 0;
   }
@@ -2026,8 +2299,8 @@
 
   .action-buttons button {
     padding: 10px 20px;
-    background: #007acc;
-    color: white;
+    background: var(--button-primary);
+    color: var(--text-primary);
     border: none;
     border-radius: 6px;
     cursor: pointer;
@@ -2037,22 +2310,22 @@
   }
 
   .action-buttons button:disabled {
-    background: #dee2e6;
-    color: #adb5bd;
+    background: var(--button-disabled-bg);
+    color: var(--button-disabled-text);
     cursor: not-allowed;
   }
 
   .action-buttons button:hover:not(:disabled) {
-    background: #005a9e;
+    background: var(--button-primary-hover);
     transform: translateY(-1px);
   }
 
   .reset-btn {
-    background: #dc3545 !important;
+    background: var(--danger-color) !important;
   }
 
   .reset-btn:hover:not(:disabled) {
-    background: #c82333 !important;
+    background: var(--button-danger-hover) !important;
   }
 
   /* Install Notification */
@@ -2065,11 +2338,11 @@
   }
 
   .notification-content {
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--success-color) 0%, var(--success-hover) 100%);
+    color: var(--text-primary);
     padding: 16px 20px;
     border-radius: 12px;
-    box-shadow: 0 8px 25px rgba(40, 167, 69, 0.3);
+    box-shadow: 0 8px 25px var(--shadow-success);
     display: flex;
     align-items: center;
     gap: 12px;
@@ -2091,7 +2364,7 @@
   .notification-close {
     background: none;
     border: none;
-    color: white;
+    color: var(--text-primary);
     font-size: 20px;
     cursor: pointer;
     padding: 0;
@@ -2105,7 +2378,7 @@
   }
 
   .notification-close:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--bg-hover-alpha);
   }
 
   @keyframes slideInRight {
@@ -2138,23 +2411,23 @@
   .installation-progress.fancy { display: flex; flex-direction: column; align-items: center; gap: 10px; }
   .big-icon { font-size: 40px; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.15)); }
   .progress-container.glass {
-    background: linear-gradient(180deg, rgba(255,255,255,0.75) 0%, rgba(248,249,250,0.75) 100%);
+    background: var(--bg-glass);
     backdrop-filter: blur(8px);
     border-radius: 12px;
     padding: 10px 14px;
-    border: 1px solid rgba(0,0,0,0.05);
-    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    border: 1px solid var(--border-glass);
+    box-shadow: 0 6px 20px var(--shadow-glass);
   }
   .progress-fill.gradient {
-    background: linear-gradient(90deg, #3b82f6 0%, #22c55e 100%);
-    box-shadow: inset 0 2px 8px rgba(0,0,0,0.15);
+    background: linear-gradient(90deg, var(--button-primary) 0%, var(--success-color) 100%);
+    box-shadow: inset 0 2px 8px var(--shadow-inset);
   }
 
   .progress-bar {
     width: 100%;
     height: 14px;
-    background: #dfe3ea; /* цвет подложки (трек) в стиле карточки */
-    border: 1px solid #cfd4da;
+    background: var(--progress-bg); /* цвет подложки (трек) в стиле карточки */
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     overflow: hidden;
     box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.08), 0 1px 0 rgba(255,255,255,0.6);
@@ -2162,7 +2435,7 @@
 
   .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #007acc 0%, #20c997 50%, #28a745 100%);
+    background: var(--progress-fill);
     border-radius: 6px;
     transition: width 0.3s ease;
     position: relative;
@@ -2179,7 +2452,7 @@
     background: linear-gradient(
       90deg,
       transparent 0%,
-      rgba(255, 255, 255, 0.3) 50%,
+      var(--shimmer-color) 50%,
       transparent 100%
     );
     animation: shimmer 2s infinite;
@@ -2199,7 +2472,7 @@
     margin-top: 8px;
     font-size: 14px;
     font-weight: 600;
-    color: #495057;
+    color: var(--text-dark);
   }
 
   @media (max-width: 768px) {
@@ -2219,8 +2492,8 @@
   .spinner {
     width: 16px;
     height: 16px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top: 2px solid white;
+    border: 2px solid var(--spinner-border);
+    border-top: 2px solid var(--text-primary);
     border-radius: 50%;
     animation: spin 1s linear infinite;
   }
@@ -2239,11 +2512,11 @@
     position: fixed;
     bottom: 20px;
     right: 20px;
-    background: linear-gradient(135deg, #007acc 0%, #005a9e 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--button-primary) 0%, var(--button-primary-hover) 100%);
+    color: var(--text-primary);
     padding: 16px 20px;
     border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0, 123, 204, 0.3);
+    box-shadow: 0 4px 20px var(--shadow-primary);
     z-index: 1000;
     animation: slideInUp 0.3s ease;
   }
@@ -2255,8 +2528,8 @@
   }
 
   .status-content .spinner {
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top: 2px solid white;
+    border: 2px solid var(--spinner-border);
+    border-top: 2px solid var(--text-primary);
   }
 
   .status-text {
@@ -2288,33 +2561,33 @@
   }
 
   .update-btn.updating .spinner {
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top: 2px solid white;
+    border: 2px solid var(--spinner-border);
+    border-top: 2px solid var(--text-primary);
   }
 
   .remove-btn.removing .spinner {
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top: 2px solid white;
+    border: 2px solid var(--spinner-border);
+    border-top: 2px solid var(--text-primary);
   }
 
   /* Version management styles */
   .version-info {
-    color: #495057;
+    color: var(--text-dark);
     font-size: 14px;
     margin: 8px 0;
     font-weight: 500;
   }
 
   .info {
-    color: #17a2b8;
+    color: var(--info-color);
     font-size: 14px;
     margin: 8px 0;
     font-style: italic;
   }
 
   .update-btn {
-    background: linear-gradient(135deg, #fd7e14 0%, #e55a00 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--warning-color) 0%, var(--warning-dark) 100%);
+    color: var(--text-primary);
     border: none;
     padding: 10px 20px;
     border-radius: 6px;
@@ -2326,7 +2599,7 @@
 
   .update-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(253, 126, 20, 0.3);
+    box-shadow: 0 4px 12px var(--shadow-warning);
   }
 
   .update-btn:active {
@@ -2336,28 +2609,28 @@
   /* App updater styles */
   .release-notes {
     margin: 15px 0;
-    border: 1px solid #dee2e6;
+    border: 1px solid var(--card-border);
     border-radius: 8px;
     overflow: hidden;
   }
 
   .release-notes summary {
     padding: 12px 16px;
-    background: #f8f9fa;
+    background: var(--bg-tertiary);
     cursor: pointer;
     font-weight: 500;
-    color: #495057;
-    border-bottom: 1px solid #dee2e6;
+    color: var(--text-dark);
+    border-bottom: 1px solid var(--card-border);
   }
 
   .release-notes summary:hover {
-    background: #e9ecef;
+    background: var(--bg-hover);
   }
 
   .release-notes-content {
     padding: 16px;
-    background: white;
-    color: #495057;
+    background: var(--card-bg);
+    color: var(--text-dark);
     line-height: 1.6;
     white-space: pre-wrap;
     max-height: 200px;
@@ -2365,7 +2638,7 @@
   }
 
   .release-notes[open] summary {
-    border-bottom: 1px solid #dee2e6;
+    border-bottom: 1px solid var(--card-border);
   }
 
   /* Language selector styles */
@@ -2377,10 +2650,10 @@
 
   .language-btn {
     padding: 12px 20px;
-    border: 2px solid #dee2e6;
+    border: 2px solid var(--input-border);
     border-radius: 8px;
-    background: white;
-    color: #495057;
+    background: var(--input-bg);
+    color: var(--text-primary);
     cursor: pointer;
     font-weight: 500;
     transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
@@ -2389,20 +2662,20 @@
   }
 
   .language-btn:hover {
-    border-color: #007acc;
-    background: #f8f9fa;
+    border-color: var(--input-focus);
+    background: var(--button-secondary);
     transform: translateY(-2px);
   }
 
   .language-btn.active {
-    border-color: #007acc;
-    background: linear-gradient(135deg, #007acc 0%, #005a9e 100%);
-    color: white;
-    box-shadow: 0 4px 12px rgba(0, 122, 204, 0.3);
+    border-color: var(--input-focus);
+    background: var(--button-primary);
+    color: var(--text-primary);
+    box-shadow: 0 4px 12px var(--shadow-primary);
   }
 
   .language-btn.active:hover {
-    background: linear-gradient(135deg, #005a9e 0%, #004080 100%);
+    background: var(--button-primary-hover);
   }
 
   @media (max-width: 768px) {
@@ -2413,6 +2686,57 @@
     .language-btn {
       width: 100%;
       text-align: center;
+    }
+  }
+
+  /* Theme selector styles */
+  .theme-selector {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .theme-btn {
+    padding: 12px 20px;
+    border: 2px solid var(--input-border);
+    border-radius: 8px;
+    background: var(--input-bg);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-weight: 500;
+    transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+    will-change: transform;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .theme-btn:hover {
+    border-color: var(--input-focus);
+    background: var(--button-secondary);
+    transform: translateY(-2px);
+  }
+
+  .theme-btn.active {
+    border-color: var(--input-focus);
+    background: var(--button-primary);
+    color: var(--text-primary);
+    box-shadow: 0 4px 12px var(--shadow-primary);
+  }
+
+  .theme-btn.active:hover {
+    background: var(--button-primary-hover);
+  }
+
+  @media (max-width: 768px) {
+    .theme-selector {
+      flex-direction: column;
+    }
+
+    .theme-btn {
+      width: 100%;
+      justify-content: center;
     }
   }
 </style>

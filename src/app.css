@@ -1,3 +1,204 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
+
+/* CSS переменные для тем */
+:root {
+  /* Светлая тема (по умолчанию) */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --border-color: #e2e8f0;
+  --border-hover: #cbd5e1;
+  --accent-primary: #3b82f6;
+  --accent-hover: #2563eb;
+  --success-color: #10b981;
+  --success-hover: #059669;
+  --warning-color: #f59e0b;
+  --warning-dark: #d97706;
+  --danger-color: #ef4444;
+  --shadow-warning: rgba(245, 158, 11, 0.3);
+  --modal-backdrop: rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  
+  /* Дополнительные переменные для элементов интерфейса */
+  --input-bg: #ffffff;
+  --input-border: #dee2e6;
+  --input-focus: #007acc;
+  --button-primary: #007acc;
+  --button-primary-hover: #005a9e;
+  --button-primary-active: #004080;
+  --button-secondary: #e9ecef;
+  --button-secondary-text: #495057;
+  --button-danger: #dc3545;
+  --button-danger-hover: #c82333;
+  --card-bg: #ffffff;
+  --card-border: #e9ecef;
+  --progress-bg: #dfe3ea;
+  --progress-fill: linear-gradient(90deg, #007acc 0%, #20c997 50%, #28a745 100%);
+  --repo-badge-success: #d4edda;
+  --repo-badge-success-text: #155724;
+  --repo-badge-success-border: #c3e6cb;
+  
+  /* Дополнительные цвета для различных элементов */
+  --text-muted-light: #6c757d;
+  --text-dark: #495057;
+  --text-light-gray: #adb5bd;
+  --text-dark-gray: #343a40;
+  --text-error-dark: #721c24;
+  --border-error: #a71e2a;
+  --bg-github: #e0ecff;
+  --text-github: #0b3d91;
+  --border-github: #c3d7ff;
+  --bg-git: #ffe9e0;
+  --text-git: #8a2c0b;
+  --border-git: #ffd1c2;
+  --text-info: #17a2b8;
+}
+
+/* Темная тема */
+[data-theme="dark"] {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --border-color: #475569;
+  --border-hover: #64748b;
+  --accent-primary: #60a5fa;
+  --accent-hover: #3b82f6;
+  --success-color: #34d399;
+  --success-hover: #10b981;
+  --warning-color: #fbbf24;
+  --warning-dark: #f59e0b;
+  --danger-color: #f87171;
+  --shadow-warning: rgba(251, 191, 36, 0.3);
+  --modal-backdrop: rgba(0, 0, 0, 0.7);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+  
+  /* Дополнительные переменные для элементов интерфейса в темной теме */
+  --input-bg: #334155;
+  --input-border: #475569;
+  --input-focus: #60a5fa;
+  --button-primary: #60a5fa;
+  --button-primary-hover: #3b82f6;
+  --button-primary-active: #2563eb;
+  --button-secondary: #475569;
+  --button-secondary-text: #cbd5e1;
+  --button-danger: #f87171;
+  --button-danger-hover: #ef4444;
+  --card-bg: #1e293b;
+  --card-border: #475569;
+  --progress-bg: #475569;
+  --progress-fill: linear-gradient(90deg, #60a5fa 0%, #34d399 50%, #10b981 100%);
+  --repo-badge-success: #064e3b;
+  --repo-badge-success-text: #34d399;
+  --repo-badge-success-border: #065f46;
+  
+  /* Дополнительные цвета для различных элементов в темной теме */
+  --text-muted-light: #94a3b8;
+  --text-dark: #cbd5e1;
+  --text-light-gray: #64748b;
+  --text-dark-gray: #f8fafc;
+  --text-error-dark: #fca5a5;
+  --border-error: #dc2626;
+  --bg-github: #1e3a8a;
+  --text-github: #93c5fd;
+  --border-github: #3b82f6;
+  --bg-git: #7c2d12;
+  --text-git: #fed7aa;
+  --border-git: #ea580c;
+  --text-info: #22d3ee;
+}
+
+/* Базовые стили с использованием CSS переменных */
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Переопределение стилей для темной темы */
+.bg-white { background-color: var(--bg-primary) !important; }
+.bg-gray-50 { background-color: var(--bg-secondary) !important; }
+.bg-gray-100 { background-color: var(--bg-tertiary) !important; }
+.text-gray-900 { color: var(--text-primary) !important; }
+.text-gray-600 { color: var(--text-secondary) !important; }
+.text-gray-500 { color: var(--text-muted) !important; }
+.border-gray-200 { border-color: var(--border-color) !important; }
+.border-gray-300 { border-color: var(--border-hover) !important; }
+.text-blue-600 { color: var(--accent-primary) !important; }
+.bg-blue-600 { background-color: var(--accent-primary) !important; }
+.hover\:bg-blue-700:hover { background-color: var(--accent-hover) !important; }
+.text-green-600 { color: var(--success-color) !important; }
+.text-yellow-600 { color: var(--warning-color) !important; }
+.text-red-600 { color: var(--danger-color) !important; }
+.bg-red-600 { background-color: var(--danger-color) !important; }
+
+/* Стили для модальных окон */
+.modal-backdrop {
+  background-color: var(--modal-backdrop);
+}
+
+.modal-card {
+  background-color: var(--bg-primary);
+  border-color: var(--border-color);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Стили для кнопок */
+.btn-primary {
+  background-color: var(--accent-primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: var(--accent-hover);
+}
+
+.btn-secondary {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+.btn-secondary:hover {
+  background-color: var(--bg-tertiary);
+  border-color: var(--border-hover);
+}
+
+.btn-danger {
+  background-color: var(--danger-color);
+  color: white;
+}
+
+/* Стили для форм */
+input, select, textarea {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Стили для карточек */
+.card {
+  background-color: var(--bg-primary);
+  border-color: var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+}

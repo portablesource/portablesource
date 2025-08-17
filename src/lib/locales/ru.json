@@ -90,10 +90,27 @@
   "settings": {
     "installation_path": "Путь установки",
     "change": "Изменить",
+    "theme": "Тема",
+    "theme_light": "Светлая",
+    "theme_dark": "Темная",
+    "theme_system": "Системная",
     "danger_zone": "Опасная зона",
     "danger_warning": "Полное удаление навсегда удалит все данные, репозитории и окружения.\nЭто действие необратимо!",
     "complete_uninstall": "Полное удаление",
-    "confirm_uninstall": "ВНИМАНИЕ! Это действие полностью удалит PortableSource:\n\n• Все установленные репозитории\n• Все окружения и данные\n• И все файлы программы\n• Записи в реестре\n\nЭто действие НЕОБРАТИМО!\n\nВы уверены, что хотите продолжить?"
+    "confirm_uninstall": "Подтверждение полного удаления",
+    "uninstall_warning_text": "Полное удаление навсегда удалит все данные, репозитории и окружения.",
+    "uninstall_items_list": {
+      "repositories": "Все установленные репозитории",
+      "environments": "Все окружения и данные",
+      "program_files": "И все файлы программы",
+      "registry": "Записи в реестре"
+    },
+    "uninstall_irreversible": "Это действие НЕОБРАТИМО!",
+    "uninstall_confirm_question": "Вы уверены, что хотите продолжить?",
+    "uninstall_type_delete": "Введите DELETE для подтверждения:",
+    "uninstall_placeholder": "Введите DELETE",
+    "uninstall_button": "Полное удаление",
+    "uninstall_cancel": "Отмена"
   },
   "common": {
     "loading": "Загрузка...",

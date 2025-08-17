@@ -87,10 +87,27 @@
   "settings": {
     "installation_path": "Installation Path",
     "change": "Change",
+    "theme": "Theme",
+    "theme_light": "Light",
+    "theme_dark": "Dark",
+    "theme_system": "System",
     "danger_zone": "Danger Zone",
     "danger_warning": "Complete uninstall will permanently delete all data, repositories and environments.\nThis action is irreversible!",
     "complete_uninstall": "Complete Uninstall",
-    "confirm_uninstall": "WARNING! This action will completely remove PortableSource:\n\n• All installed repositories\n• All environments and data\n• And all program files\n• Registry entries\n\nThis action is IRREVERSIBLE!\n\nAre you sure you want to continue?"
+    "confirm_uninstall": "Confirm Complete Uninstall",
+    "uninstall_warning_text": "Complete uninstall will permanently delete all data, repositories and environments.",
+    "uninstall_items_list": {
+      "repositories": "All installed repositories",
+      "environments": "All environments and data",
+      "program_files": "And all program files",
+      "registry": "Registry entries"
+    },
+    "uninstall_irreversible": "This action is IRREVERSIBLE!",
+    "uninstall_confirm_question": "Are you sure you want to continue?",
+    "uninstall_type_delete": "Type DELETE to confirm:",
+    "uninstall_placeholder": "Type DELETE",
+    "uninstall_button": "Complete Uninstall",
+    "uninstall_cancel": "Cancel"
   },
   "common": {
     "loading": "Loading...",
