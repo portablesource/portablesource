@@ -3386,7 +3386,7 @@ checksum = "f84267b20a16ea918e43c6a88433c2d54fa145c92a811b5b047ccbe153674483"
 
 [[package]]
 name = "portablesource"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "log",
  "portablesource-rs",
@@ -3405,7 +3405,7 @@ dependencies = [
 
 [[package]]
 name = "portablesource-rs"
-version = "1.1.7"
+version = "1.1.8"
 dependencies = [
  "anyhow",
  "clap",
