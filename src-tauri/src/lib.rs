@@ -118,11 +118,19 @@ async fn find_cli_installation() -> Result<String, String> {
     // 1) Попытка через реестр
     if let Ok(path) = get_install_path().await {
         let root = Path::new(&path);
-        if root.exists() { return Ok(path); }
+        if root.exists() {
+            // Проверяем наличие CLI файлов в пути из реестра
+            let ps_env = root.join("ps_env");
+            let conf_in_root = root.join("portablesource_config.json");
+            if ps_env.exists() || conf_in_root.exists() {
+                return Ok(path);
+            }
+        }
     }
 
     // 2) Эвристика по типичным путям нашей программы
     let candidates = [
+        PathBuf::from(r"C:\PS\portablesource"),
         PathBuf::from(r"C:\PS"),
         PathBuf::from(r"C:\PortableSource"),
     ];
@@ -137,14 +145,20 @@ async fn find_cli_installation() -> Result<String, String> {
         }
     }
 
-    // 3) Попытка прочитать конфиг из корня C:\PS\portablesource_config.json, если есть
-    let c_ps_cfg = Path::new(r"C:\PS\portablesource_config.json");
-    if c_ps_cfg.exists() {
-        if let Ok(text) = std::fs::read_to_string(c_ps_cfg) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                if let Some(install) = json.get("install_path").and_then(|v| v.as_str()) {
-                    let p = PathBuf::from(install);
-                    if p.exists() { return Ok(p.to_string_lossy().to_string()); }
+    // 3) Попытка прочитать конфиг из различных возможных путей
+    let config_candidates = [
+        Path::new(r"C:\PS\portablesource\portablesource_config.json"),
+        Path::new(r"C:\PS\portablesource_config.json"),
+    ];
+    
+    for c_ps_cfg in config_candidates.iter() {
+        if c_ps_cfg.exists() {
+            if let Ok(text) = std::fs::read_to_string(c_ps_cfg) {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                    if let Some(install) = json.get("install_path").and_then(|v| v.as_str()) {
+                        let p = PathBuf::from(install);
+                        if p.exists() { return Ok(p.to_string_lossy().to_string()); }
+                    }
                 }
             }
         }
@@ -654,6 +668,18 @@ async fn clear_install_path() -> Result<InstallResult, String> {
 }
 
 #[tauri::command]
+async fn check_environment_exists_at_path(install_path: String) -> Result<bool, String> {
+    let install_dir = PathBuf::from(&install_path);
+    let cfg = PsConfigManager::new(Some(install_dir.clone())).map_err(|e| e.to_string())?;
+    let env_mgr = PsEnvManager::with_config(install_dir, cfg);
+    
+    match env_mgr.check_environment_status() {
+        Ok(exists) => Ok(exists),
+        Err(_) => Ok(false)
+    }
+}
+
+#[tauri::command]
 async fn delete_repository(state: tauri::State<'_, AppState>, install_path: String, repo_name: Option<String>) -> Result<InstallResult, String> {
     log::info!("[tauri] delete_repository called: install_path={:?}, repo_name={:?}", install_path, repo_name);
     let repo_name_for_message = repo_name.clone().unwrap_or_default();
@@ -936,6 +962,7 @@ pub fn run() {
             run_cli_command,
             proxy_request,
             clear_install_path,
+            check_environment_exists_at_path,
             delete_repository,
             complete_uninstall,
             check_environment_installed,

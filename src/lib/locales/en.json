@@ -40,7 +40,12 @@
     "environment_setup_error": "Environment setup error: {error}",
     "check_failed": "Check failed",
     "all_installed": "All set!",
-    "installing": "Installing..."
+    "installing": "Installing...",
+    "environment_missing_title": "Environment Removed",
+    "environment_missing_description": "You have removed the base environment at path:",
+    "environment_missing_instruction": "Choose one of the following actions:",
+    "select_new_path": "Select New Installation Path",
+    "clear_registry_key": "Remove Registry Key"
   },
   "repositories": {
     "top_repositories": "Top Repositories",

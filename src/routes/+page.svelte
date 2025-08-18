@@ -6,7 +6,7 @@
   import { _, locale } from 'svelte-i18n';
 
   // Installation flow state
-  let currentStep = 'initial-check'; // 'initial-check', 'path-selection', 'installing', 'main-interface'
+  let currentStep = 'initial-check'; // 'initial-check', 'path-selection', 'installing', 'main-interface', 'environment-missing'
   let installPath = '';
   let isInstalling = false;
   let installStatus = '';
@@ -14,6 +14,10 @@
   let installTimerInterval: number | null = null;
   let installProgress = 0;
   let maxInstallTime = 1200; // Maximum expected install time in seconds
+  
+  // Environment missing dialog state
+  let showEnvironmentMissingDialog = false;
+  let registryPath = '';
   
   // Main interface state
   let cliInstalled = false;
@@ -152,10 +156,29 @@
 
   async function performInitialCheck() {
     try {
-      // Try registry first, then heuristics
+      // Try registry first
       try {
-        installPath = await invoke('get_install_path');
+        registryPath = await invoke('get_install_path');
+        
+        // Check if environment exists at registry path
+        if (registryPath) {
+          const environmentExists = await invoke('check_environment_exists_at_path', { install_path: registryPath });
+          
+          if (!environmentExists) {
+            // Environment missing at registry path - show dialog
+            showEnvironmentMissingDialog = true;
+            currentStep = 'environment-missing';
+            return;
+          }
+          
+          // Environment exists, use registry path
+          installPath = registryPath;
+        } else {
+          // No registry path, try heuristics
+          installPath = await invoke('find_cli_installation');
+        }
       } catch (e) {
+        // Registry failed, try heuristics
         installPath = await invoke('find_cli_installation');
       }
       
@@ -195,6 +218,35 @@
       }
     } catch (error) {
       installStatus = `Folder selection error: ${error}`;
+    }
+  }
+
+  async function handleNewInstallPath() {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Выберите новый путь установки'
+      });
+      
+      if (selected) {
+        installPath = selected;
+        showEnvironmentMissingDialog = false;
+        currentStep = 'path-selection';
+      }
+    } catch (error) {
+      installStatus = `Ошибка выбора папки: ${error}`;
+    }
+  }
+
+  async function clearRegistryAndSelectPath() {
+    try {
+      await invoke('clear_install_path');
+      showEnvironmentMissingDialog = false;
+      currentStep = 'path-selection';
+      installPath = '';
+    } catch (error) {
+      installStatus = `Ошибка очистки реестра: ${error}`;
     }
   }
 
@@ -1096,6 +1148,35 @@
       </div>
     {/if}
     
+    <!-- Environment Missing Dialog -->
+    {#if currentStep === 'environment-missing'}
+      <div class="step-container">
+        <h1 class="step-title">{$_('installation.environment_missing_title')}</h1>
+        <p class="step-description">
+          {$_('installation.environment_missing_description')} <strong>{registryPath}</strong>
+        </p>
+        <p class="step-description">
+          {$_('installation.environment_missing_instruction')}
+        </p>
+        
+        <div class="button-group">
+          <button 
+            class="confirm-button" 
+            on:click={handleNewInstallPath}
+          >
+            {$_('installation.select_new_path')}
+          </button>
+          
+          <button 
+            class="secondary-button" 
+            on:click={clearRegistryAndSelectPath}
+          >
+            {$_('installation.clear_registry_key')}
+          </button>
+        </div>
+      </div>
+    {/if}
+    
     <!-- Step 1: Path Selection -->
     {#if currentStep === 'path-selection'}
       <div class="step-container">
@@ -1776,6 +1857,33 @@
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
+  }
+
+  .button-group {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-top: 30px;
+    align-items: center;
+  }
+
+  .secondary-button {
+    background: linear-gradient(135deg, var(--warning-color) 0%, var(--warning-dark) 100%);
+    color: white;
+    border: none;
+    padding: 15px 36px;
+    font-size: 16px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+  }
+
+  .secondary-button:hover {
+    background: linear-gradient(135deg, var(--warning-dark) 0%, var(--warning-color) 100%);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-warning);
   }
 
   /* removed .status */

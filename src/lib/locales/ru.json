@@ -40,7 +40,12 @@
     "environment_setup_error": "Ошибка настройки окружения: {error}",
     "check_failed": "Проверка не удалась",
     "all_installed": "Все установлено!",
-    "installing": "Установка..."
+    "installing": "Установка...",
+    "environment_missing_title": "Окружение удалено",
+    "environment_missing_description": "Вы удалили базовое окружение по пути:",
+    "environment_missing_instruction": "Выберите одно из действий:",
+    "select_new_path": "Выбрать новый путь установки",
+    "clear_registry_key": "Удалить ключ из реестра"
   },
   "repositories": {
     "top_repositories": "Топ репозитории",
