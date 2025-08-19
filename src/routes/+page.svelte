@@ -156,6 +156,14 @@
 
   async function performInitialCheck() {
     try {
+      // Check if this is the first run
+      const firstRun = await invoke('is_first_run');
+      if (firstRun) {
+        // First run - show installation context window
+        currentStep = 'path-selection';
+        return;
+      }
+      
       // Try registry first
       try {
         registryPath = await invoke('get_install_path');
@@ -251,6 +259,7 @@
   }
 
   async function savePathAndStartInstallation() {
+    
     if (!installPath) {
       installStatus = $_('installation.select_installation_folder');
       return;
@@ -258,17 +267,34 @@
 
     try {
       const result = await invoke('set_install_path', { path: installPath }) as {success: boolean, message?: string, normalized_path?: string};
+      
       if (result.success) {
         if (result.normalized_path) {
           installPath = result.normalized_path;
         }
+        
+        // Copy self to installation path
+        try {
+          const copyResult = await invoke('copy_self_to_install_path', { installPath: installPath }) as {success: boolean, message?: string};
+          
+          if (!copyResult.success) {
+            installStatus = `Self-copy error: ${copyResult.message}`;
+            return;
+          }
+        } catch (error) {
+          installStatus = `Self-copy error: ${error}`;
+          return;
+        }
+        
         currentStep = 'installing';
         await startEnvironmentSetupStream();
       } else {
         installStatus = `Error: ${result.message}`;
+        console.log('set_install_path failed:', result.message);
       }
     } catch (error) {
       installStatus = `Path saving error: ${error}`;
+      console.log('Exception in savePathAndStartInstallation:', error);
     }
   }
 

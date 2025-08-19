@@ -1,8 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::fs;
-use winreg::enums::*;
-use winreg::RegKey;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
 use tauri::Emitter;
@@ -85,14 +83,9 @@ async fn set_install_path(path: String) -> Result<InstallResult, String> {
 
     fs::create_dir_all(&target).map_err(|e| format!("Failed to create directory: {}", e))?;
 
-    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    let key = hkcu
-        .create_subkey("Software\\PortableSource")
-        .map_err(|e| format!("Failed to create registry key: {}", e))?;
-
-    key.0
-        .set_value("InstallPath", &target.to_string_lossy().to_string())
-        .map_err(|e| format!("Failed to set registry value: {}", e))?;
+    // Create ps_env directory to mark this as a valid installation
+    let ps_env_dir = target.join("ps_env");
+    fs::create_dir_all(&ps_env_dir).map_err(|e| format!("Failed to create ps_env directory: {}", e))?;
 
     Ok(InstallResult {
         success: true,
@@ -103,63 +96,27 @@ async fn set_install_path(path: String) -> Result<InstallResult, String> {
 
 #[tauri::command]
 async fn get_install_path() -> Result<String, String> {
-    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    let key = hkcu.open_subkey("Software\\PortableSource")
-        .map_err(|_| "Registry key not found".to_string())?;
+    // Try to find installation near current executable
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(exe_dir) = current_exe.parent() {
+            let ps_env = exe_dir.join("ps_env");
+            if ps_env.exists() {
+                return Ok(exe_dir.to_string_lossy().to_string());
+            }
+        }
+    }
     
-    let path: String = key.get_value("InstallPath")
-        .map_err(|_| "Install path not found in registry".to_string())?;
-    
-    Ok(path)
+    Err("Install path not found".to_string())
 }
 
 #[tauri::command]
 async fn find_cli_installation() -> Result<String, String> {
-    // 1) Попытка через реестр
-    if let Ok(path) = get_install_path().await {
-        let root = Path::new(&path);
-        if root.exists() {
-            // Проверяем наличие CLI файлов в пути из реестра
-            let ps_env = root.join("ps_env");
-            let conf_in_root = root.join("portablesource_config.json");
-            if ps_env.exists() || conf_in_root.exists() {
-                return Ok(path);
-            }
-        }
-    }
-
-    // 2) Эвристика по типичным путям нашей программы
-    let candidates = [
-        PathBuf::from(r"C:\PS\portablesource"),
-        PathBuf::from(r"C:\PS"),
-        PathBuf::from(r"C:\PortableSource"),
-    ];
-    for c in candidates.iter() {
-        if c.exists() {
-            // признак установки: есть ps_env или конфиг
-            let ps_env = c.join("ps_env");
-            let conf_in_root = c.join("portablesource_config.json");
-            if ps_env.exists() || conf_in_root.exists() {
-                return Ok(c.to_string_lossy().to_string());
-            }
-        }
-    }
-
-    // 3) Попытка прочитать конфиг из различных возможных путей
-    let config_candidates = [
-        Path::new(r"C:\PS\portablesource\portablesource_config.json"),
-        Path::new(r"C:\PS\portablesource_config.json"),
-    ];
-    
-    for c_ps_cfg in config_candidates.iter() {
-        if c_ps_cfg.exists() {
-            if let Ok(text) = std::fs::read_to_string(c_ps_cfg) {
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if let Some(install) = json.get("install_path").and_then(|v| v.as_str()) {
-                        let p = PathBuf::from(install);
-                        if p.exists() { return Ok(p.to_string_lossy().to_string()); }
-                    }
-                }
+    // 1) Попытка найти установку рядом с текущим исполняемым файлом
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(exe_dir) = current_exe.parent() {
+            let ps_env = exe_dir.join("ps_env");
+            if ps_env.exists() {
+                return Ok(exe_dir.to_string_lossy().to_string());
             }
         }
     }
@@ -203,17 +160,6 @@ async fn download_and_install_cli(state: tauri::State<'_, AppState>, install_pat
         *state.config.lock().map_err(|_| "State poisoned")? = cfg;
     }
     Ok(InstallResult { success: true, message: "Environment installed successfully".to_string(), normalized_path: Some(install_dir.to_string_lossy().to_string()) })
-}
-
-#[tauri::command]
-async fn test_cli_installation(state: tauri::State<'_, AppState>, install_path: String) -> Result<InstallResult, String> {
-    let install_dir = PathBuf::from(install_path);
-    if !install_dir.exists() {
-        return Ok(InstallResult { success: false, message: "Install path not found".into(), normalized_path: None });
-    }
-    // Проверим доступность базовых каталогов/конфига через библиотеку
-    let _guard = state.config.lock().map_err(|_| "State poisoned")?;
-    Ok(InstallResult { success: true, message: "Library available".into(), normalized_path: Some(install_dir.to_string_lossy().to_string()) })
 }
 
 #[tauri::command]
@@ -644,27 +590,12 @@ async fn check_environment_status(state: tauri::State<'_, AppState>, install_pat
 
 #[tauri::command]
 async fn clear_install_path() -> Result<InstallResult, String> {
-    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    
-    match hkcu.open_subkey("Software\\PortableSource") {
-        Ok(key) => {
-            key.delete_value("InstallPath")
-                .map_err(|e| format!("Failed to delete registry value: {}", e))?;
-            
-            Ok(InstallResult {
-                success: true,
-                message: "Installation path cleared successfully".to_string(),
-                normalized_path: None,
-            })
-        }
-        Err(_) => {
-            Ok(InstallResult {
-                success: true,
-                message: "Registry key not found, nothing to clear".to_string(),
-                normalized_path: None,
-            })
-        }
-    }
+    // Since we no longer use registry, this function just returns success
+    Ok(InstallResult {
+        success: true,
+        message: "Installation path cleared successfully (no registry used)".to_string(),
+        normalized_path: None,
+    })
 }
 
 #[tauri::command]
@@ -818,12 +749,17 @@ async fn is_admin() -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
-        let output = Command::new("powershell")
-            .args([
+        let mut cmd = Command::new("powershell");
+        cmd.args([
                 "-Command",
                 "[bool]([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
-            ])
-            .output()
+            ]);
+        
+        // Hide console window on Windows
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        
+        let output = cmd.output()
             .map_err(|e| format!("Failed to run PowerShell: {}", e))?;
         let out = String::from_utf8_lossy(&output.stdout).to_string();
         let is_admin = out.to_lowercase().contains("true");
@@ -839,37 +775,28 @@ async fn is_admin() -> Result<bool, String> {
 async fn get_system_locale() -> Result<String, String> {
     #[cfg(target_os = "windows")]
     {
-        use winreg::enums::*;
-        use winreg::RegKey;
+        // Try to get locale using PowerShell command
+        let mut cmd = Command::new("powershell");
+        cmd.args(["-Command", "Get-Culture | Select-Object -ExpandProperty Name"]);
         
-        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        // Hide console window on Windows
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         
-        // Try to get locale from Control Panel\International
-        if let Ok(intl_key) = hkcu.open_subkey("Control Panel\\International") {
-            if let Ok(locale_name) = intl_key.get_value::<String, _>("LocaleName") {
-                // Convert Windows locale format to standard format
-                let locale = locale_name.replace("-", "_").to_lowercase();
-                
-                // Map common locales to our supported ones
-                if locale.starts_with("ru") {
-                    return Ok("ru".to_string());
-                } else {
-                    return Ok("en".to_string());
-                }
+        let output = cmd.output();
+            
+        if let Ok(output) = output {
+            let locale = String::from_utf8_lossy(&output.stdout).trim().to_lowercase();
+            
+            // Map common locales to our supported ones
+            if locale.starts_with("ru") {
+                return Ok("ru".to_string());
+            } else {
+                return Ok("en".to_string());
             }
         }
         
-        // Fallback: try to get from user default locale
-        if let Ok(intl_key) = hkcu.open_subkey("Control Panel\\International") {
-            if let Ok(locale) = intl_key.get_value::<String, _>("Locale") {
-                // Russian locale codes
-                if locale == "00000419" || locale == "0419" {
-                    return Ok("ru".to_string());
-                }
-            }
-        }
-        
-        // Default to English
+        // Default to English if command fails
         Ok("en".to_string())
     }
     
@@ -883,6 +810,45 @@ async fn get_system_locale() -> Result<String, String> {
 #[tauri::command]
 fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
+async fn is_first_run() -> Result<bool, String> {
+    // Проверяем, есть ли папка ps_env рядом с исполняемым файлом
+    let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe_dir = exe_path.parent().ok_or("Cannot get executable directory")?;
+    let ps_env_path = exe_dir.join("ps_env");
+    
+    Ok(!ps_env_path.exists())
+}
+
+#[tauri::command]
+async fn copy_self_to_install_path(install_path: String) -> Result<InstallResult, String> {
+    let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe_name = exe_path.file_name().ok_or("Cannot get executable name")?;
+    
+    let install_dir = Path::new(&install_path);
+    let target_path = install_dir.join(exe_name);
+    
+    // Создаем директорию установки если её нет
+    if !install_dir.exists() {
+        fs::create_dir_all(install_dir).map_err(|e| format!("Failed to create install directory: {}", e))?;
+    }
+    
+    // Копируем исполняемый файл
+    fs::copy(&exe_path, &target_path).map_err(|e| format!("Failed to copy executable: {}", e))?;
+    
+    // Создаем папку ps_env для обозначения валидной установки
+    let ps_env_path = install_dir.join("ps_env");
+    if !ps_env_path.exists() {
+        fs::create_dir_all(&ps_env_path).map_err(|e| format!("Failed to create ps_env directory: {}", e))?;
+    }
+    
+    Ok(InstallResult {
+        success: true,
+        message: format!("Application copied to {}", target_path.display()),
+        normalized_path: Some(target_path.to_string_lossy().to_string()),
+    })
 }
 
 #[tauri::command]
@@ -958,7 +924,6 @@ pub fn run() {
             get_install_path,
             find_cli_installation,
             download_and_install_cli,
-            test_cli_installation,
             run_cli_command,
             proxy_request,
             clear_install_path,
@@ -982,7 +947,9 @@ pub fn run() {
             install_update,
             check_msvc_bt_installed,
             install_msvc_bt,
-            is_admin
+            is_admin,
+            is_first_run,
+            copy_self_to_install_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "portablesource",
-  "version": "0.0.16",
+  "version": "0.1.0",
   "identifier": "dev.portablesource",
   "build": {
     "frontendDist": "../build",
@@ -51,11 +51,8 @@
     }
   },
   "bundle": {
-    "active": true,
-    "targets": [
-      "msi",
-      "nsis"
-    ],
+    "active": false,
+    "targets": [],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
