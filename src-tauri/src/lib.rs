@@ -450,9 +450,13 @@ async fn setup_environment_stream(
 #[tauri::command]
 async fn run_batch_in_new_window(batch_file: String, working_dir: String) -> Result<CommandResult, String> {
     if cfg!(target_os = "windows") {
-        // Use start command to open batch file in new console window
+        // Use full path to batch file to avoid caching issues
+        let full_batch_path = Path::new(&working_dir).join(&batch_file);
+        let full_batch_path_str = full_batch_path.to_string_lossy();
+        
+        // Use start command to open batch file in new console window with full path
         let output = Command::new("cmd")
-            .args(["/C", "start", "cmd", "/K", &batch_file])
+            .args(["/C", "start", "cmd", "/K", &full_batch_path_str])
             .current_dir(&working_dir)
             .output()
             .map_err(|e| format!("Failed to run batch file in new window: {}", e))?;
@@ -482,6 +486,12 @@ async fn check_environment_installed(install_path: String) -> Result<bool, Strin
 async fn check_repository_installed(install_path: String, repo_name: String) -> Result<bool, String> {
     let repo_path = Path::new(&install_path).join("repos").join(&repo_name);
     Ok(repo_path.exists() && repo_path.is_dir())
+}
+
+#[tauri::command]
+async fn file_exists(path: String) -> Result<bool, String> {
+    let file_path = Path::new(&path);
+    Ok(file_path.exists() && file_path.is_file())
 }
 
 #[tauri::command]
@@ -933,6 +943,7 @@ pub fn run() {
             check_environment_installed,
             check_environment_status,
             check_repository_installed,
+            file_exists,
             list_directory_folders,
             run_command,
             run_command_stream,

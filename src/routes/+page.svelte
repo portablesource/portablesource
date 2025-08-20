@@ -20,7 +20,7 @@
   let registryPath = '';
   
   // Main interface state
-  let cliInstalled = false;
+  let cliInstalled = true; // CLI is built into the application
   
   // (removed) Legacy CLI version management state
 
@@ -205,7 +205,7 @@
       }
     } catch (error) {
       
-      cliInstalled = false;
+      cliInstalled = true; // CLI is built into the application
       currentStep = 'path-selection';
     }
     
@@ -322,12 +322,8 @@
         if (result.normalized_path) {
           installPath = result.normalized_path;
         }
-        await testCliInstallation();
-        if (cliInstalled) {
-          await finishInstallation();
-        } else {
-          installStatus = $_('common.error');
-        }
+        cliInstalled = true;
+        await finishInstallation();
       } else {
         installStatus = `Installation error: ${result.message}`;
       }
@@ -356,25 +352,7 @@
     await checkEnvironmentStatus();
   }
 
-  async function testCliInstallation(showError = true) {
-    try {
-      const result = await invoke('test_cli_installation', { install_path: installPath }) as {success: boolean, message?: string};
-      if (result.success) {
-        cliInstalled = true;
-        // CLI test ok
-      } else {
-        cliInstalled = false;
-        if (showError) {
-          installStatus = `CLI testing error: ${result.message}`;
-        }
-      }
-    } catch (error) {
-      if (showError) {
-        installStatus = `Testing error: ${error}`;
-      }
-      cliInstalled = false;
-    }
-  }
+  // CLI is now built into the application, no separate testing needed
 
   // Environment functions
   async function checkEnvironmentSetup() {
@@ -586,11 +564,14 @@
   // Repository management functions
   async function installRepo(repoName: string) {
     try {
+      console.log('installRepo called with:', repoName);
       isInstallingRepo = true;
       installingRepoName = repoName;
       
       // Check if CLI is installed first
+      console.log('cliInstalled:', cliInstalled);
       if (!cliInstalled) {
+        console.log('CLI not installed, redirecting to settings');
         installStatus = $_('cli.not_installed');
         setTimeout(() => {
           setCurrentView('settings');
@@ -598,11 +579,15 @@
         }, 1500);
         return;
       }
+      console.log('CLI check passed');
 
       // Check if repository is already installed by folder presence
+      console.log('Checking if repo is already installed:', repoName);
       const isInstalled = await checkRepoInstallStatus(repoName);
+      console.log('isInstalled:', isInstalled);
       
       if (isInstalled) {
+        console.log('Repository already installed, showing notification');
         // Show notification and navigate to installed repositories
         installedRepoName = repoName;
         showInstallNotification = true;
@@ -613,14 +598,18 @@
         return;
       }
 
-      // Check environment presence before installation using proper status check
-      const envStatus = await invoke('check_environment_status', { install_path: installPath, installPath }) as {
-        environment_exists: boolean,
-        setup_completed: boolean,
-        overall_status: string
-      };
-      
-      if (!envStatus.setup_completed) {
+      // Check if python.exe exists in the installation directory
+      try {
+        const pythonPath = `${installPath}\\ps_env\\python\\python.exe`;
+        const pythonExists = await invoke('file_exists', { path: pythonPath }) as boolean;
+        
+        if (!pythonExists) {
+          console.log('Python not found, stopping installation');
+          installStatus = $_('installation.environment_setup_first');
+          return;
+        }
+      } catch (error) {
+        console.log('Error checking python existence:', error);
         installStatus = $_('installation.environment_setup_first');
         return;
       }
@@ -645,6 +634,7 @@
           setCurrentView('installed-repos');
         }, 3000);
       } else {
+        console.log('Installation failed:', result);
         installStatus = $_('repositories.installation_error', { values: { repoName, error: result.stderr || result.stdout || $_('repositories.unknown_error') } });
       }
     } catch (error) {
