@@ -59,6 +59,34 @@
   --text-git: #8a2c0b;
   --border-git: #ffd1c2;
   --text-info: #17a2b8;
+  
+  /* Additional variables for complete theme support */
+  --bg-hamburger: #ffffff;
+  --bg-hover: #f1f5f9;
+  --bg-hover-alpha: rgba(241, 245, 249, 0.5);
+  --bg-glass: rgba(255, 255, 255, 0.1);
+  --bg-danger-light: #fef2f2;
+  --bg-danger-lighter: #fef7f7;
+  --bg-danger-alpha: rgba(239, 68, 68, 0.1);
+  --bg-success: #dcfce7;
+  --border-glass: rgba(255, 255, 255, 0.2);
+  --border-danger-alpha: rgba(239, 68, 68, 0.3);
+  --button-primary-active: #1e40af;
+  --button-danger-active: #b91c1c;
+  --button-disabled-bg: #e5e7eb;
+  --button-disabled-text: #9ca3af;
+  --overlay-bg: rgba(0, 0, 0, 0.5);
+  --shadow-glass: rgba(0, 0, 0, 0.1);
+  --shadow-inset: rgba(0, 0, 0, 0.1);
+  --shadow-primary: rgba(0, 122, 204, 0.3);
+  --shadow-secondary: rgba(108, 117, 125, 0.3);
+  --shadow-success: rgba(16, 185, 129, 0.3);
+  --shadow-danger: rgba(239, 68, 68, 0.3);
+  --shadow-danger-alpha: rgba(239, 68, 68, 0.1);
+  --shadow-modal: rgba(0, 0, 0, 0.3);
+  --spinner-border: rgba(255, 255, 255, 0.3);
+  --shimmer-color: rgba(255, 255, 255, 0.5);
+  --info-color: #17a2b8;
 }
 
 /* Темная тема */
@@ -117,6 +145,34 @@
   --text-git: #fed7aa;
   --border-git: #ea580c;
   --text-info: #22d3ee;
+  
+  /* Additional variables for complete theme support - Dark theme */
+  --bg-hamburger: #334155;
+  --bg-hover: #475569;
+  --bg-hover-alpha: rgba(71, 85, 105, 0.5);
+  --bg-glass: rgba(0, 0, 0, 0.3);
+  --bg-danger-light: #450a0a;
+  --bg-danger-lighter: #7f1d1d;
+  --bg-danger-alpha: rgba(248, 113, 113, 0.1);
+  --bg-success: #064e3b;
+  --border-glass: rgba(255, 255, 255, 0.1);
+  --border-danger-alpha: rgba(248, 113, 113, 0.3);
+  --button-primary-active: #1e40af;
+  --button-danger-active: #dc2626;
+  --button-disabled-bg: #374151;
+  --button-disabled-text: #6b7280;
+  --overlay-bg: rgba(0, 0, 0, 0.7);
+  --shadow-glass: rgba(0, 0, 0, 0.3);
+  --shadow-inset: rgba(0, 0, 0, 0.3);
+  --shadow-primary: rgba(96, 165, 250, 0.3);
+  --shadow-secondary: rgba(148, 163, 184, 0.3);
+  --shadow-success: rgba(52, 211, 153, 0.3);
+  --shadow-danger: rgba(248, 113, 113, 0.3);
+  --shadow-danger-alpha: rgba(248, 113, 113, 0.1);
+  --shadow-modal: rgba(0, 0, 0, 0.5);
+  --spinner-border: rgba(255, 255, 255, 0.2);
+  --shimmer-color: rgba(255, 255, 255, 0.3);
+  --info-color: #22d3ee;
 }
 
 /* Базовые стили с использованием CSS переменных */

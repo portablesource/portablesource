@@ -4,6 +4,8 @@
   import { open } from '@tauri-apps/plugin-dialog';
   import { onMount } from 'svelte';
   import { _, locale } from 'svelte-i18n';
+  import ConsoleSettings from '../lib/components/ConsoleSettings.svelte';
+  import { consoleService } from '../lib/stores/console';
 
   // Installation flow state
   let currentStep = 'initial-check'; // 'initial-check', 'path-selection', 'installing', 'main-interface', 'environment-missing'
@@ -393,6 +395,7 @@
   }
 
   async function startEnvironmentSetupStream() {
+    consoleService.info('Starting environment setup process', 'Environment');
     isSettingUpEnvironment = true;
     installStatus = $_('installation.setup_environment');
     envSetupProgress = { phase: 'init', done: 0, total: 0 };
@@ -420,12 +423,14 @@
     });
     const unlistenError = await listen(`env-setup-error-${eventId}`, (e: any) => {
       installStatus = $_('installation.environment_setup_failed', { values: { error: String(e.payload) } });
+      consoleService.error(`Environment setup error: ${String(e.payload)}`, 'Environment');
     });
     const unlistenFinished = await listen(`env-setup-finished-${eventId}`, async (e: any) => {
       const { success } = e.payload as any;
       if (success) {
         installProgress = 100;
         installStatus = $_('installation.all_installed');
+        consoleService.info('Environment setup completed successfully', 'Environment');
         // краткая задержка и переход
         setTimeout(async () => {
           currentStep = 'main-interface';
@@ -433,6 +438,7 @@
         }, 1000);
       } else {
         installStatus = $_('installation.environment_setup_failed', { values: { error: $_('repositories.unknown_error') } });
+        consoleService.error('Environment setup failed', 'Environment');
       }
       unlistenProgress();
       unlistenError();
@@ -565,6 +571,7 @@
   async function installRepo(repoName: string) {
     try {
       console.log('installRepo called with:', repoName);
+      consoleService.info(`Starting installation of repository: ${repoName}`, 'Repository');
       isInstallingRepo = true;
       installingRepoName = repoName;
       
@@ -627,6 +634,7 @@
         installedRepoName = repoName;
         showInstallNotification = true;
         installStatus = $_('repositories.successfully_installed', { values: { name: repoName } });
+        consoleService.info(`Repository '${repoName}' installed successfully`, 'Repository');
         
         // Automatically hide notification after 3 seconds and navigate to installed repositories
         setTimeout(() => {
@@ -636,10 +644,12 @@
       } else {
         console.log('Installation failed:', result);
         installStatus = $_('repositories.installation_error', { values: { repoName, error: result.stderr || result.stdout || $_('repositories.unknown_error') } });
+        consoleService.error(`Failed to install repository '${repoName}': ${result.stderr || result.stdout || 'Unknown error'}`, 'Repository');
       }
     } catch (error) {
       console.error('Error during repository installation:', error);
       installStatus = $_('repositories.installation_error', { values: { repoName, error: String(error) } });
+      consoleService.error(`Repository installation error for '${repoName}': ${String(error)}`, 'Repository');
     } finally {
       isInstallingRepo = false;
       installingRepoName = '';
@@ -666,6 +676,7 @@
   async function installRepoFromInput(userInput: string) {
     const displayName = extractRepoDisplayName(userInput);
     try {
+      consoleService.info(`Starting installation of repository: ${displayName}`, 'Repository');
       isInstallingRepo = true;
       installingRepoName = displayName;
 
@@ -700,13 +711,16 @@
         installedRepoName = displayName;
         showInstallNotification = true;
         installStatus = $_('repositories.successfully_installed', { values: { name: displayName } });
+        consoleService.info(`Repository '${displayName}' installed successfully`, 'Repository');
         setTimeout(() => { showInstallNotification = false; setCurrentView('installed-repos'); }, 3000);
       } else {
         installStatus = $_('repositories.installation_error', { values: { repoName: displayName, error: result.stderr || result.stdout || $_('repositories.unknown_error') } });
+        consoleService.error(`Failed to install repository '${displayName}': ${result.stderr || result.stdout || 'Unknown error'}`, 'Repository');
       }
     } catch (error) {
       console.error('Error during repository installation (input):', error);
       installStatus = $_('repositories.installation_error', { values: { repoName: displayName, error: String(error) } });
+      consoleService.error(`Repository installation error for '${displayName}': ${String(error)}`, 'Repository');
     } finally {
       isInstallingRepo = false;
       installingRepoName = '';
@@ -766,6 +780,7 @@
 
   async function runRepo(repoName: string) {
     try {
+      consoleService.info(`Starting repository: ${repoName}`, 'Repository');
       installStatus = $_('repositories.starting', { values: { repoName } });
       
       // Run batch file start_repo_name.bat from repository folder in new console window
@@ -785,17 +800,21 @@
       
       if (result.success) {
         installStatus = $_('repositories.started_success', { values: { repoName } });
+        consoleService.info(`Repository '${repoName}' started successfully`, 'Repository');
       } else {
         installStatus = $_('repositories.start_error', { values: { repoName, error: result.stderr || result.stdout || $_('repositories.unknown_error') } });
+        consoleService.error(`Failed to start repository '${repoName}': ${result.stderr || result.stdout || 'Unknown error'}`, 'Repository');
       }
     } catch (error) {
       console.error('Error in runRepo:', error);
       installStatus = $_('repositories.start_error', { values: { repoName, error: String(error) } });
+      consoleService.error(`Repository launch error for '${repoName}': ${String(error)}`, 'Repository');
     }
   }
 
   async function updateRepo(repoName: string) {
     try {
+      consoleService.info(`Starting update for repository: ${repoName}`, 'Repository');
       sidebarOpen = false;
       isUpdatingRepo = true;
       updatingRepoName = repoName;
@@ -810,11 +829,14 @@
       
       if (result.success) {
         installStatus = $_('repositories.updated_success', { values: { repoName } });
+        consoleService.info(`Repository '${repoName}' updated successfully`, 'Repository');
       } else {
         installStatus = $_('repositories.update_error', { values: { repoName, error: result.stderr || $_('repositories.unknown_error') } });
+        consoleService.error(`Failed to update repository '${repoName}': ${result.stderr || 'Unknown error'}`, 'Repository');
       }
     } catch (error) {
       installStatus = $_('repositories.update_error', { values: { repoName, error: String(error) } });
+      consoleService.error(`Repository update error for '${repoName}': ${String(error)}`, 'Repository');
     } finally {
       isUpdatingRepo = false;
       updatingRepoName = '';
@@ -823,6 +845,7 @@
 
   async function removeRepo(repoName: string) {
     try {
+      consoleService.info(`Starting removal of repository: ${repoName}`, 'Repository');
       sidebarOpen = false;
       isRemovingRepo = true;
       removingRepoName = repoName;
@@ -870,11 +893,14 @@
       
       if (result.success) {
         installStatus = $_('repositories.removed_success', { values: { repoName } });
+        consoleService.info(`Repository '${repoName}' removed successfully`, 'Repository');
       } else {
         installStatus = $_('repositories.installation_error', { values: { repoName, error: result.message } });
+        consoleService.error(`Failed to remove repository '${repoName}': ${result.message}`, 'Repository');
       }
     } catch (error) {
       installStatus = $_('repositories.installation_error', { values: { repoName, error: String(error) } });
+      consoleService.error(`Repository removal error for '${repoName}': ${String(error)}`, 'Repository');
     } finally {
       isRemovingRepo = false;
       removingRepoName = '';
@@ -896,6 +922,7 @@
 
   async function removeAllRepos() {
     try {
+      consoleService.info('Starting removal of all repositories', 'Repository');
       installStatus = $_('repositories.removing');
       
       // Remove all folders from envs
@@ -917,11 +944,14 @@
       
       if (envResult.success && repoResult.success) {
         installStatus = $_('common.success');
+        consoleService.info('All repositories removed successfully', 'Repository');
       } else {
         installStatus = $_('common.error');
+        consoleService.error('Failed to remove all repositories', 'Repository');
       }
     } catch (error) {
       installStatus = $_('repositories.installation_error', { values: { repoName: 'all', error: String(error) } });
+      consoleService.error(`Bulk repository removal error: ${String(error)}`, 'Repository');
     }
   }
 
@@ -1524,6 +1554,12 @@
             </div>
           </div>
 
+          <!-- Console Debug Settings -->
+          <div class="settings-section">
+            <h2>🖥️ {$_('debug_console.title')}</h2>
+            <ConsoleSettings />
+          </div>
+
            <div class="settings-section">
               <h2>{$_('repositories.repository_management')}</h2>
               <div class="action-buttons">
@@ -1533,13 +1569,38 @@
             </div>
 
             <div class="settings-section danger-section">
-              <h2>⚠️ {$_('settings.danger_zone')}</h2>
-              <p class="danger-warning">
-                {$_('settings.danger_warning')}
-              </p>
-              <div class="action-buttons">
-                <button class="danger-btn" on:click={openUninstallModal}>
-                  🗑️ {$_('settings.complete_uninstall')}
+              <div class="danger-header">
+                <div class="danger-icon-container">
+                  <svg class="danger-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                  </svg>
+                </div>
+                <div class="danger-title-section">
+                  <h2 class="danger-title">{$_('settings.danger_zone')}</h2>
+                  <p class="danger-subtitle">{$_('settings.danger_zone_description')}</p>
+                </div>
+              </div>
+              
+              <div class="danger-warning-card">
+                <div class="warning-icon">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                </div>
+                <div class="warning-content">
+                  <h3>{$_('settings.danger_zone_warning_title')}</h3>
+                  <p class="danger-warning-text">{$_('settings.danger_warning')}</p>
+                </div>
+              </div>
+              
+              <div class="danger-action">
+                <button class="danger-btn enhanced" on:click={openUninstallModal}>
+                  <div class="btn-icon">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                    </svg>
+                  </div>
+                  <span>{$_('settings.complete_uninstall')}</span>
                 </button>
               </div>
             </div>
@@ -1550,48 +1611,128 @@
 
   <!-- Complete Uninstall Modal - Global -->
   {#if showUninstallModal}
-    <div class="modal-backdrop" role="button" tabindex="0" aria-label="Close modal"
+    <div class="modal-backdrop enhanced" role="button" tabindex="0" aria-label="Close modal"
          on:click={closeUninstallModal}
          on:keydown={(e) => { if (e.key==='Escape') closeUninstallModal(); }}></div>
-    <div class="modal-card danger-modal" role="dialog" aria-modal="true">
-      <div class="modal-header">
-        <h3>⚠️ {$_('settings.confirm_uninstall')}</h3>
-      </div>
-      <div class="modal-body">
-        <div class="danger-warning-box">
-          <p class="danger-text">{$_('settings.uninstall_warning_text')}</p>
-          <ul class="uninstall-list">
-            <li>• {$_('settings.uninstall_items_list.repositories')}</li>
-            <li>• {$_('settings.uninstall_items_list.environments')}</li>
-            <li>• {$_('settings.uninstall_items_list.program_files')}</li>
-            <li>• {$_('settings.uninstall_items_list.registry')}</li>
-          </ul>
-          <p class="final-warning">{$_('settings.uninstall_irreversible')}</p>
+    <div class="modal-card danger-modal enhanced" role="dialog" aria-modal="true">
+      <div class="modal-header enhanced">
+        <div class="modal-title-container">
+          <div class="modal-warning-icon">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3>{$_('settings.confirm_uninstall')}</h3>
+            <p class="modal-subtitle">{$_('common.action_cannot_be_undone')}</p>
+          </div>
         </div>
-        <div class="confirmation-input">
-          <p class="confirm-instruction">{$_('settings.uninstall_confirm_question')}</p>
-          <p class="type-instruction">{$_('settings.uninstall_type_delete')}</p>
-          <input 
-            type="text" 
-            bind:value={uninstallConfirmText} 
-            placeholder={$_('settings.uninstall_placeholder')}
-            class="danger-input"
-            on:keydown={(e) => { 
-              if (e.key==='Enter' && uninstallConfirmText.toLowerCase() === 'delete') confirmUninstallModal(); 
-              if (e.key==='Escape') closeUninstallModal(); 
-            }} 
-          />
+        <button class="modal-close-btn" on:click={closeUninstallModal} aria-label={$_('common.close_modal')}>
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+      
+      <div class="modal-body enhanced">
+        <div class="danger-warning-box enhanced">
+          <div class="warning-section">
+            <div class="section-icon">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+            </div>
+            <div class="section-content">
+              <h4>What will be deleted:</h4>
+              <p class="danger-text">{$_('settings.uninstall_warning_text')}</p>
+            </div>
+          </div>
+          
+          <div class="uninstall-items">
+            <div class="uninstall-item">
+              <svg class="item-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+              </svg>
+              <span>{$_('settings.uninstall_items_list.repositories')}</span>
+            </div>
+            <div class="uninstall-item">
+              <svg class="item-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+              </svg>
+              <span>{$_('settings.uninstall_items_list.environments')}</span>
+            </div>
+            <div class="uninstall-item">
+              <svg class="item-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+              </svg>
+              <span>{$_('settings.uninstall_items_list.program_files')}</span>
+            </div>
+            <div class="uninstall-item">
+              <svg class="item-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+              </svg>
+              <span>{$_('settings.uninstall_items_list.registry')}</span>
+            </div>
+          </div>
+          
+          <div class="final-warning enhanced">
+            <div class="warning-badge">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+              </svg>
+              <span>{$_('settings.uninstall_irreversible')}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="confirmation-input enhanced">
+          <div class="confirmation-header">
+            <h4>{$_('settings.uninstall_confirm_question')}</h4>
+            <p class="type-instruction">{$_('settings.uninstall_type_delete')}</p>
+          </div>
+          <div class="input-container">
+            <input 
+              type="text" 
+              bind:value={uninstallConfirmText} 
+              placeholder={$_('settings.uninstall_placeholder')}
+              class="danger-input enhanced"
+              on:keydown={(e) => { 
+                if (e.key==='Enter' && uninstallConfirmText.toLowerCase() === 'delete') confirmUninstallModal(); 
+                if (e.key==='Escape') closeUninstallModal(); 
+              }} 
+            />
+            <div class="input-status" class:valid={uninstallConfirmText.toLowerCase() === 'delete'}>
+              {#if uninstallConfirmText.toLowerCase() === 'delete'}
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+              {:else}
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+              {/if}
+            </div>
+          </div>
         </div>
       </div>
-      <div class="modal-actions">
-        <button class="btn-secondary" on:click={closeUninstallModal}>{$_('settings.uninstall_cancel')}</button>
+      
+      <div class="modal-actions enhanced">
+        <button class="btn-secondary enhanced" on:click={closeUninstallModal}>
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+          {$_('settings.uninstall_cancel')}
+        </button>
         <button 
-          class="btn-danger" 
+          class="btn-danger enhanced" 
           class:disabled={uninstallConfirmText.toLowerCase() !== 'delete'}
           disabled={uninstallConfirmText.toLowerCase() !== 'delete'}
           on:click={confirmUninstallModal}
         >
-          🗑️ {$_('settings.uninstall_button')}
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+          </svg>
+          {$_('settings.uninstall_button')}
         </button>
       </div>
     </div>
@@ -1625,19 +1766,19 @@
     border-radius: 8px;
     padding: 12px;
     cursor: pointer;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-sm);
     transition: all 0.3s ease;
   }
 
   .hamburger-btn:hover {
     background: var(--card-bg);
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-md);
   }
 
   .hamburger-line {
     width: 20px;
     height: 2px;
-    background: var(--text-dark);
+    background: var(--text-primary);
     margin: 4px 0;
     transition: 0.3s;
   }
@@ -1650,7 +1791,7 @@
     width: 300px;
     height: 100vh;
     background: var(--bg-primary);
-    box-shadow: 2px 0 15px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow-lg);
     transform: translateX(-100%);
     transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
     will-change: transform;
@@ -1693,7 +1834,7 @@
     border-radius: 12px;
     text-align: left;
     font-size: 16px;
-    color: var(--text-muted-light);
+    color: var(--text-secondary);
     cursor: pointer;
     transition: background 160ms ease, color 160ms ease, transform 160ms ease;
     will-change: transform;
@@ -1701,17 +1842,17 @@
 
   .nav-item:hover {
     background: var(--bg-tertiary);
-    color: var(--text-dark);
+    color: var(--text-primary);
   }
 
   .nav-item.active {
     background: linear-gradient(135deg, var(--button-primary) 0%, var(--button-primary-hover) 100%);
     color: var(--text-primary);
-    box-shadow: 0 2px 8px rgba(0, 122, 204, 0.3);
+    box-shadow: var(--shadow-primary);
   }
 
   .settings-section {
-    border-top: 1px solid #dee2e6;
+    border-top: 1px solid var(--border-color);
     padding-top: 20px;
   }
 
@@ -1725,8 +1866,8 @@
   }
 
   .settings-btn.active {
-    background: linear-gradient(135deg, var(--text-muted-light) 0%, var(--text-dark) 100%) !important;
-    border-color: var(--text-dark) !important;
+    background: linear-gradient(135deg, var(--button-secondary) 0%, var(--button-primary) 100%) !important;
+    border-color: var(--button-primary) !important;
   }
 
   /* Overlay */
@@ -1774,7 +1915,7 @@
     padding: 60px 40px;
     background: var(--card-bg);
     border-radius: 20px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-lg);
     border: 1px solid var(--card-border);
   }
 
@@ -1808,7 +1949,7 @@
     background: var(--input-bg);
     padding: 8px;
     border-radius: 16px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow-md);
     border: 2px solid var(--input-border);
   }
 
@@ -1819,36 +1960,36 @@
     border: none;
     border-radius: 12px;
     background: transparent;
-    color: var(--text-dark);
+    color: var(--text-primary);
     outline: none;
     font-weight: 400;
   }
 
   .path-input-container input::placeholder {
-    color: var(--text-light-gray);
+    color: var(--text-muted);
     font-weight: 300;
   }
 
   .path-input-container button {
     padding: 20px 32px;
     font-size: 16px;
-    background: linear-gradient(135deg, var(--text-light-gray) 0%, var(--text-muted) 100%);
+    background: linear-gradient(135deg, var(--button-secondary) 0%, var(--button-primary) 100%);
     color: var(--text-primary);
     border: none;
     border-radius: 12px;
     font-weight: 500;
     transition: all 0.3s ease;
-    box-shadow: 0 2px 8px rgba(173, 181, 189, 0.3);
+    box-shadow: var(--shadow-sm);
   }
 
   .path-input-container button:hover:not(:disabled) {
-    background: linear-gradient(135deg, var(--text-muted) 0%, var(--text-dark) 100%);
+    background: linear-gradient(135deg, var(--button-primary) 0%, var(--button-primary-hover) 100%);
     transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(173, 181, 189, 0.4);
+    box-shadow: var(--shadow-md);
   }
 
   .confirm-button {
-    background: linear-gradient(135deg, var(--text-light-gray) 0%, var(--text-muted) 100%);
+    background: linear-gradient(135deg, var(--button-primary) 0%, var(--button-primary-hover) 100%);
     color: var(--text-primary);
     border: none;
     padding: 18px 48px;
@@ -1862,14 +2003,14 @@
   }
 
   .confirm-button:hover:not(:disabled) {
-    background: linear-gradient(135deg, var(--text-muted) 0%, var(--text-dark) 100%);
+    background: linear-gradient(135deg, var(--button-primary-hover) 0%, var(--button-primary-active) 100%);
     transform: translateY(-3px);
-    box-shadow: 0 8px 25px rgba(173, 181, 189, 0.4);
+    box-shadow: var(--shadow-lg);
   }
 
   .confirm-button:disabled {
-    background: var(--bg-tertiary);
-    color: var(--text-light-gray);
+    background: var(--button-disabled-bg);
+    color: var(--button-disabled-text);
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
@@ -1917,25 +2058,25 @@
     background: var(--card-bg);
     padding: 25px;
     border-radius: 16px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow-md);
     border: 1px solid var(--card-border);
     transition: all 0.3s ease;
   }
 
   .repo-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+    box-shadow: var(--shadow-lg);
   }
 
   .repo-card h3 {
-    color: var(--text-dark);
+    color: var(--text-primary);
     font-size: 1.3rem;
     margin-bottom: 10px;
     font-weight: 600;
   }
 
   .repo-card p {
-    color: var(--text-muted-light);
+    color: var(--text-secondary);
     line-height: 1.5;
     margin-bottom: 20px;
   }
@@ -1954,7 +2095,7 @@
   }
 
   .author {
-    color: var(--text-muted-light);
+    color: var(--text-secondary);
   }
 
   .install-repo-btn {
@@ -1980,13 +2121,13 @@
   }
 
   .install-repo-btn.installing {
-    background: linear-gradient(135deg, var(--text-muted-light) 0%, var(--text-dark) 100%);
+    background: linear-gradient(135deg, var(--button-secondary) 0%, var(--button-primary) 100%);
   }
 
 
 
   .open-repo-btn {
-    background: linear-gradient(135deg, var(--button-primary) 0%, var(--button-primary-hover) 100%);
+    background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-hover) 100%);
     color: var(--text-primary);
     border: none;
     padding: 12px 24px;
@@ -1995,13 +2136,13 @@
     font-weight: 500;
     transition: transform 150ms ease, box-shadow 150ms ease;
     will-change: transform;
-    box-shadow: 0 2px 8px rgba(23, 162, 184, 0.3);
+    box-shadow: var(--shadow-primary);
   }
 
   .open-repo-btn:hover {
-    background: linear-gradient(135deg, var(--button-primary-hover) 0%, var(--button-primary-active) 100%);
+    background: linear-gradient(135deg, var(--accent-hover) 0%, var(--button-primary-active) 100%);
     transform: translateY(-1px);
-    box-shadow: 0 4px 15px rgba(23, 162, 184, 0.4);
+    box-shadow: var(--shadow-lg);
   }
 
   /* Modal styles */
@@ -2015,7 +2156,7 @@
     width: min(520px, 92vw);
     max-height: 80vh;
     background: var(--card-bg); border-radius: 16px; padding: 20px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    box-shadow: var(--shadow-modal);
     border: 1px solid var(--card-border);
     animation: fadeIn 180ms ease;
     overflow: auto;
@@ -2026,11 +2167,380 @@
     width: 100%; padding: 12px 14px; border: 1px solid var(--input-border); border-radius: 10px; outline: none;
     font-size: 14px; background: var(--input-bg); color: var(--text-primary);
   }
-  .modal-card input:focus { border-color: var(--input-focus); box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.15); }
+  .modal-card input:focus { border-color: var(--input-focus); box-shadow: 0 0 0 3px var(--shadow-primary); }
   .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
   .btn-secondary { background: var(--button-secondary); border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; color: var(--button-secondary-text); }
   .btn-primary { background: var(--button-primary); color: var(--text-primary); border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; }
   .btn-primary:hover { background: var(--button-primary-hover); }
+
+  /* Enhanced Modal Styles */
+  .modal-backdrop.enhanced {
+    background: var(--modal-backdrop);
+    backdrop-filter: blur(8px);
+  }
+  
+  .modal-card.enhanced {
+    width: min(600px, 95vw);
+    background: linear-gradient(135deg, var(--card-bg) 0%, var(--bg-secondary) 100%);
+    border: none;
+    box-shadow: 0 25px 80px var(--shadow-modal), 0 0 0 1px var(--border-danger-alpha);
+    transform: translate(-50%, -50%) scale(0.95);
+    animation: modalEnhancedIn 0.3s ease forwards;
+  }
+  
+  @keyframes modalEnhancedIn {
+    to {
+      transform: translate(-50%, -50%) scale(1);
+    }
+  }
+  
+  .modal-header.enhanced {
+    border-bottom: 2px solid var(--border-danger-alpha);
+    padding: 24px 24px 20px;
+    margin: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    background: linear-gradient(135deg, var(--card-bg) 0%, var(--bg-danger-lighter) 100%);
+    border-radius: 16px 16px 0 0;
+  }
+  
+  .modal-title-container {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    flex: 1;
+  }
+  
+  .modal-warning-icon {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, var(--danger-color), var(--button-danger-hover));
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-primary);
+    box-shadow: 0 4px 15px var(--shadow-danger);
+    flex-shrink: 0;
+  }
+  
+  .modal-warning-icon svg {
+    width: 24px;
+    height: 24px;
+  }
+  
+  .modal-header.enhanced h3 {
+    color: var(--danger-color) !important;
+    font-size: 20px;
+    font-weight: 700;
+    margin: 0 0 4px 0;
+    line-height: 1.2;
+  }
+  
+  .modal-subtitle {
+    color: var(--text-muted-light);
+    font-size: 14px;
+    margin: 0;
+    font-weight: 500;
+  }
+  
+  .modal-close-btn {
+    background: var(--bg-tertiary);
+    border: none;
+    border-radius: 8px;
+    padding: 8px;
+    cursor: pointer;
+    color: var(--text-muted-light);
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+  }
+  
+  .modal-close-btn:hover {
+    background: var(--bg-danger-alpha);
+    color: var(--danger-color);
+    transform: scale(1.1);
+  }
+  
+  .modal-close-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+  
+  .modal-body.enhanced {
+    padding: 24px;
+    margin: 0;
+  }
+  
+  .danger-warning-box.enhanced {
+    background: linear-gradient(135deg, var(--bg-danger-lighter) 0%, var(--bg-danger-light) 100%);
+    border: 2px solid var(--border-danger-alpha);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .danger-warning-box.enhanced::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--danger-color), var(--button-danger-hover), var(--danger-color));
+    background-size: 200% 100%;
+    animation: danger-border 2s linear infinite;
+  }
+  
+  @keyframes danger-border {
+    0% { background-position: 0% 0%; }
+    100% { background-position: 200% 0%; }
+  }
+  
+  .warning-section {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    margin-bottom: 20px;
+  }
+  
+  .section-icon {
+    width: 24px;
+    height: 24px;
+    color: var(--danger-color);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  
+  .section-content h4 {
+    margin: 0 0 8px 0;
+    color: var(--danger-color);
+    font-size: 16px;
+    font-weight: 600;
+  }
+  
+  .uninstall-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  
+  .uninstall-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: var(--bg-danger-alpha);
+    border: 1px solid var(--border-danger-alpha);
+    border-radius: 8px;
+    color: var(--text-error-dark);
+    font-weight: 500;
+    font-size: 14px;
+  }
+  
+  .item-icon {
+    width: 18px;
+    height: 18px;
+    color: var(--danger-color);
+    flex-shrink: 0;
+  }
+  
+  .final-warning.enhanced {
+    display: flex;
+    justify-content: center;
+    margin: 0;
+  }
+  
+  .warning-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, var(--danger-color), var(--button-danger-hover));
+    color: var(--text-primary);
+    padding: 12px 20px;
+    border-radius: 25px;
+    font-weight: 700;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    box-shadow: 0 4px 15px var(--shadow-danger);
+    animation: warning-pulse 2s ease-in-out infinite;
+  }
+  
+  @keyframes warning-pulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 4px 15px var(--shadow-danger); }
+    50% { transform: scale(1.05); box-shadow: 0 6px 20px var(--shadow-danger); }
+  }
+  
+  .warning-badge svg {
+    width: 16px;
+    height: 16px;
+  }
+  
+  .confirmation-input.enhanced {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--card-bg) 100%);
+    border: 2px solid var(--border-danger-alpha);
+    border-radius: 16px;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .confirmation-header {
+    margin-bottom: 16px;
+  }
+  
+  .confirmation-header h4 {
+    color: var(--text-dark);
+    font-weight: 600;
+    margin: 0 0 8px 0;
+    font-size: 16px;
+  }
+  
+  .input-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  
+  .danger-input.enhanced {
+    width: 100%;
+    padding: 16px 20px;
+    padding-right: 50px;
+    border: 2px solid var(--border-danger-alpha);
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    outline: none;
+    transition: all 0.3s ease;
+    background: var(--input-bg);
+    color: var(--danger-color);
+  }
+  
+  .danger-input.enhanced:focus {
+    border-color: var(--danger-color);
+    box-shadow: 0 0 0 4px var(--shadow-danger-alpha);
+    transform: scale(1.02);
+  }
+  
+  .input-status {
+    position: absolute;
+    right: 16px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    background: var(--bg-tertiary);
+    color: var(--text-muted-light);
+  }
+  
+  .input-status.valid {
+    background: var(--bg-success);
+    color: var(--success-color);
+    transform: scale(1.1);
+  }
+  
+  .input-status svg {
+    width: 14px;
+    height: 14px;
+  }
+  
+  .modal-actions.enhanced {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin: 0;
+    padding: 20px 24px 24px;
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+    border-radius: 0 0 16px 16px;
+    border-top: 2px solid var(--border-danger-alpha);
+  }
+  
+  .btn-secondary.enhanced {
+    background: linear-gradient(135deg, var(--text-muted-light), var(--text-dark));
+    color: var(--text-primary);
+    border: none;
+    padding: 12px 20px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+  }
+  
+  .btn-secondary.enhanced:hover {
+    background: linear-gradient(135deg, var(--text-dark), var(--text-dark-gray));
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--shadow-secondary);
+  }
+  
+  .btn-secondary.enhanced svg {
+    width: 16px;
+    height: 16px;
+  }
+  
+  .btn-danger.enhanced {
+    background: linear-gradient(135deg, var(--danger-color), var(--button-danger-hover));
+    color: var(--text-primary);
+    border: none;
+    padding: 12px 20px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 16px;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .btn-danger.enhanced::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    transition: left 0.5s;
+  }
+  
+  .btn-danger.enhanced:hover:not(:disabled)::before {
+    left: 100%;
+  }
+  
+  .btn-danger.enhanced:hover:not(:disabled) {
+    background: linear-gradient(135deg, var(--button-danger-hover), var(--button-danger-active));
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px var(--shadow-danger);
+  }
+  
+  .btn-danger.enhanced.disabled,
+  .btn-danger.enhanced:disabled {
+    background: linear-gradient(135deg, var(--text-muted-light), var(--text-dark));
+    cursor: not-allowed;
+    opacity: 0.6;
+    transform: none;
+    box-shadow: none;
+  }
+  
+  .btn-danger.enhanced svg {
+    width: 16px;
+    height: 16px;
+  }
 
   /* Danger Modal Styles */
   .danger-modal {
@@ -2069,19 +2579,6 @@
     margin: 0 0 15px 0;
     font-size: 16px;
   }
-  
-  .uninstall-list {
-    color: var(--text-error-dark);
-    margin: 15px 0;
-    padding-left: 0;
-    list-style: none;
-  }
-  
-  .uninstall-list li {
-    margin: 8px 0;
-    font-weight: 500;
-  }
-  
   .final-warning {
     color: var(--danger-color);
     font-weight: 700;
@@ -2098,14 +2595,7 @@
     border-radius: 12px;
     padding: 20px;
   }
-  
-  .confirm-instruction {
-    color: var(--text-dark-gray);
-    font-weight: 600;
-    margin: 0 0 10px 0;
-    font-size: 16px;
-  }
-  
+
   .type-instruction {
     color: var(--text-muted-light);
     margin: 0 0 15px 0;
@@ -2194,11 +2684,11 @@
     padding: 60px 20px;
     background: var(--card-bg);
     border-radius: 16px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow-md);
   }
 
   .empty-state p {
-    color: var(--text-muted-light);
+    color: var(--text-secondary);
     font-size: 1.1rem;
     margin-bottom: 20px;
   }
@@ -2224,7 +2714,7 @@
     background: var(--card-bg);
     padding: 20px;
     border-radius: 12px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+    box-shadow: var(--shadow-sm);
     will-change: transform;
     border: 1px solid var(--card-border);
     display: flex;
@@ -2233,7 +2723,7 @@
   }
 
   .installed-repo-item h3 {
-    color: var(--text-dark);
+    color: var(--text-primary);
     margin: 0;
     font-size: 1.1rem;
     font-weight: 600;
@@ -2285,7 +2775,7 @@
 
   .launch-btn:hover, .update-btn:hover, .remove-btn:hover {
     transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-md);
   }
 
   /* Settings Content */
@@ -2299,12 +2789,12 @@
     padding: 30px;
     border-radius: 12px;
     margin-bottom: 20px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow-md);
     border: 1px solid var(--card-border);
   }
 
   .settings-section h2 {
-    color: var(--text-dark);
+    color: var(--text-primary);
     font-size: 1.3rem;
     margin-bottom: 15px;
     font-weight: 600;
@@ -2323,7 +2813,7 @@
     border-radius: 8px;
     font-size: 14px;
     background: var(--input-bg);
-    color: var(--text-color);
+    color: var(--text-primary);
   }
 
   .path-selector button {
@@ -2368,21 +2858,169 @@
   .danger-section {
     border: 2px solid var(--danger-color) !important;
     background: linear-gradient(135deg, var(--bg-danger-light) 0%, var(--bg-danger-lighter) 100%) !important;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .danger-section::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    background: linear-gradient(45deg, var(--danger-color), var(--button-danger-hover), var(--danger-color), var(--button-danger-hover));
+    background-size: 400% 400%;
+    border-radius: 12px;
+    z-index: -1;
+    animation: danger-gradient 3s ease-in-out infinite;
+  }
+  
+  @keyframes danger-gradient {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  
+  .danger-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    margin-bottom: 24px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid rgba(220, 53, 69, 0.2);
+  }
+  
+  .danger-icon-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 60px;
+    height: 60px;
+    background: linear-gradient(135deg, var(--danger-color), var(--button-danger-hover));
+    border-radius: 16px;
+    box-shadow: 0 8px 25px var(--shadow-danger);
+    flex-shrink: 0;
+  }
+  
+  .danger-icon {
+    width: 32px;
+    height: 32px;
+    color: var(--text-primary);
+    animation: danger-pulse 2s ease-in-out infinite;
+  }
+  
+  @keyframes danger-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+  }
+  
+  .danger-title-section {
+    flex: 1;
+  }
+  
+  .danger-title {
+    color: var(--danger-color) !important;
+    font-weight: 700;
+    font-size: 1.5rem;
+    margin: 0 0 8px 0;
+    text-shadow: 0 2px 4px rgba(220, 53, 69, 0.1);
+  }
+  
+  .danger-subtitle {
+    color: var(--text-muted-light);
+    font-size: 14px;
+    margin: 0;
+    font-weight: 500;
+  }
+  
+  .danger-warning-card {
+    background: var(--bg-danger-alpha);
+    border: 2px solid var(--border-danger-alpha);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  
+  .warning-icon {
+    width: 24px;
+    height: 24px;
+    color: var(--danger-color);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  
+  .warning-content h3 {
+    margin: 0 0 8px 0;
+    color: var(--danger-color);
+    font-size: 16px;
+    font-weight: 600;
+  }
+  
+  .danger-warning-text {
+    color: var(--text-error-dark);
+    font-weight: 500;
+    margin: 0;
+    line-height: 1.5;
+  }
+  
+  .danger-action {
+    display: flex;
+    justify-content: center;
+    margin-top: 24px;
+  }
+  
+  .danger-btn.enhanced {
+    background: linear-gradient(135deg, var(--danger-color), var(--button-danger-hover)) !important;
+    color: var(--text-primary) !important;
+    border: 2px solid var(--danger-color) !important;
+    font-weight: 600 !important;
+    font-size: 16px !important;
+    padding: 16px 32px !important;
+    border-radius: 12px !important;
+    transition: all 0.3s ease !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+    position: relative !important;
+    overflow: hidden !important;
+    min-width: 200px !important;
+    justify-content: center !important;
+  }
+  
+  .danger-btn.enhanced::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    transition: left 0.5s;
+  }
+  
+  .danger-btn.enhanced:hover::before {
+    left: 100%;
+  }
+  
+  .danger-btn.enhanced:hover:not(:disabled) {
+    background: linear-gradient(135deg, var(--button-danger-hover), var(--button-danger-active)) !important;
+    border-color: var(--button-danger-hover) !important;
+    transform: translateY(-3px) !important;
+    box-shadow: 0 8px 25px var(--shadow-danger) !important;
+  }
+  
+  .danger-btn.enhanced .btn-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
   }
 
   .danger-section h2 {
     color: var(--danger-color) !important;
     font-weight: 700;
-  }
-
-  .danger-warning {
-    color: var(--text-error-dark);
-    font-weight: 500;
-    margin: 15px 0;
-    padding: 15px;
-    background: var(--bg-danger-alpha);
-    border-radius: 8px;
-    border-left: 4px solid var(--danger-color);
   }
 
   .danger-btn {

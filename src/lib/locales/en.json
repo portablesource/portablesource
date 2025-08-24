@@ -97,6 +97,8 @@
     "theme_dark": "Dark",
     "theme_system": "System",
     "danger_zone": "Danger Zone",
+    "danger_zone_description": "Irreversible actions that affect your entire installation",
+    "danger_zone_warning_title": "Before you proceed",
     "danger_warning": "Complete uninstall will permanently delete all data, repositories and environments.\nThis action is irreversible!",
     "complete_uninstall": "Complete Uninstall",
     "confirm_uninstall": "Confirm Complete Uninstall",
@@ -121,7 +123,9 @@
     "cancel": "Cancel",
     "confirm": "Confirm",
     "unknown": "Unknown",
-    "environment_not_found": "Environment not found"
+    "environment_not_found": "Environment not found",
+    "close_modal": "Close modal",
+    "action_cannot_be_undone": "This action cannot be undone"
   },
   "updater": {
     "check_for_updates": "Check for updates",
@@ -146,5 +150,64 @@
     "not_installed": "✗ Build Tools are not installed. If you encounter build errors, you may need to install them",
     "not_admin": "✗ The app is not running as Administrator. Restart as administrator to install Build Tools",
     "install_button": "Install MSVC Build Tools"
+  }
+  ,
+  "debug_console": {
+    "title": "Debug console",
+    "header": {
+      "title": "Debug console",
+      "logs_count": "Logs:",
+      "status_active": "Console active",
+      "status_inactive": "Console inactive"
+    },
+    "filters": {
+      "all_levels": "All levels",
+      "all_sources": "All sources",
+      "search_placeholder": "Search...",
+      "level_debug": "Debug",
+      "level_info": "Info",
+      "level_warn": "Warning",
+      "level_error": "Error",
+      "source_gui": "GUI",
+      "source_cli": "CLI"
+    },
+    "actions": {
+      "clear": "Clear",
+      "clear_tooltip": "Clear logs",
+      "reset": "Reset",
+      "reset_tooltip": "Reset filters",
+      "hide": "Hide console",
+      "show": "Show console",
+      "saving": "Saving..."
+    },
+    "messages": {
+      "disabled": "Console is disabled. Enable it in settings.",
+      "no_logs": "No logs available",
+      "no_matches": "No logs matching filters"
+    },
+    "settings": {
+      "title": "Debug console",
+      "description": "Monitor and manage debug output",
+      "enable_label": "Enable console",
+      "enable_description": "Enable to display logs from GUI and CLI in real time",
+      "enable_sr": "Enable console",
+      "status_label": "Status:",
+      "status_active": "Active",
+      "status_inactive": "Inactive",
+      "logs_in_buffer": "Logs in buffer:",
+      "max_entries": "Maximum entries:",
+      "log_level_label": "Log level",
+      "log_level_debug": "Debug (all logs)",
+      "log_level_info": "Info (information and above)",
+      "log_level_warn": "Warning (warnings and errors)",
+      "log_level_error": "Error (errors only)",
+      "log_level_description": "Select minimum log level to display",
+      "clear_logs": "Clear logs",
+      "quick_actions": "Quick Actions"
+    },
+    "toggle": {
+      "enable_tooltip": "Enable console",
+      "toggle_tooltip": "Toggle console"
+    }
   }
 }

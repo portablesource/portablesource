@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
 use tauri::Emitter;
 use std::sync::Mutex;
+use std::sync::Arc;
+use std::collections::VecDeque;
+use chrono::{DateTime, Utc};
 
 // Integrate Rust CLI library directly
 use portablesource_rs::config::ConfigManager as PsConfigManager;
@@ -13,10 +16,32 @@ use portablesource_rs::repository_installer::RepositoryInstaller as PsRepoInstal
 use portablesource_rs::utils as ps_utils;
 
 // Keep shared config to reduce redundant disk I/O
-struct AppState { config: Mutex<PsConfigManager> }
+struct AppState { 
+    config: Mutex<PsConfigManager>,
+    log_buffer: Arc<Mutex<VecDeque<LogEntry>>>,
+    console_enabled: Arc<Mutex<bool>>,
+}
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
+
+// Log entry structure for unified console
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LogEntry {
+    timestamp: DateTime<Utc>,
+    level: String,
+    source: String, // "GUI" or "CLI"
+    message: String,
+    module: Option<String>,
+}
+
+// Console settings
+#[derive(Debug, Serialize, Deserialize)]
+struct ConsoleSettings {
+    enabled: bool,
+    max_entries: usize,
+    log_level: String,
+}
 
 #[tauri::command]
 async fn proxy_request(url: String) -> Result<String, String> {
@@ -348,15 +373,75 @@ async fn run_cli_command_stream(
 
     if args.contains(&"--setup-env".to_string()) {
         emit_line("stdout", "Setting up environment...".into());
+        let _ = add_log_entry(
+            state.clone(),
+            app_handle.clone(),
+            "info".to_string(),
+            "CLI".to_string(),
+            "Starting environment setup".to_string(),
+            Some("cli".to_string()),
+        ).await;
+        
         let env_mgr = PsEnvManager::new(install_dir.clone());
-        if let Err(e) = env_mgr.setup_environment().await { success = false; exit_code = Some(1); emit_line("stderr", e.to_string()); }
-        else { emit_line("stdout", "Environment setup completed".into()); }
+        if let Err(e) = env_mgr.setup_environment().await { 
+            success = false; 
+            exit_code = Some(1); 
+            emit_line("stderr", e.to_string());
+            let _ = add_log_entry(
+                state.clone(),
+                app_handle.clone(),
+                "error".to_string(),
+                "CLI".to_string(),
+                format!("Environment setup failed: {}", e),
+                Some("cli".to_string()),
+            ).await;
+        } else { 
+            emit_line("stdout", "Environment setup completed".into());
+            let _ = add_log_entry(
+                state.clone(),
+                app_handle.clone(),
+                "info".to_string(),
+                "CLI".to_string(),
+                "Environment setup completed successfully".to_string(),
+                Some("cli".to_string()),
+            ).await;
+        }
     } else if let Some(pos) = args.iter().position(|a| a == "--install-repo") {
         if let Some(repo) = args.get(pos + 1) {
             emit_line("stdout", format!("Installing repo '{}'...", repo));
+            let _ = add_log_entry(
+                state.clone(),
+                app_handle.clone(),
+                "info".to_string(),
+                "CLI".to_string(),
+                format!("Installing repository: {}", repo),
+                Some("repository".to_string()),
+            ).await;
+            
             let mut installer = PsRepoInstaller::new(install_dir.clone(), cfg.clone());
-            if let Err(e) = installer.install_repository(repo).await { success = false; exit_code = Some(1); emit_line("stderr", e.to_string()); }
-            else { emit_line("stdout", "Repository installed".into()); }
+            if let Err(e) = installer.install_repository(repo).await { 
+                success = false; 
+                exit_code = Some(1); 
+                emit_line("stderr", e.to_string());
+                let _ = add_log_entry(
+                    state.clone(),
+                    app_handle.clone(),
+                    "error".to_string(),
+                    "CLI".to_string(),
+                    format!("Repository installation failed: {}", e),
+                    Some("repository".to_string()),
+                ).await;
+            } else { 
+                emit_line("stdout", "Repository installed".into());
+                let _ = add_log_entry(
+                    state.clone(),
+                    app_handle.clone(),
+                    "info".to_string(),
+                    "CLI".to_string(),
+                    format!("Repository '{}' installed successfully", repo),
+                    Some("repository".to_string()),
+                ).await;
+            }
         } else { success = false; exit_code = Some(1); emit_line("stderr", "Missing repository name".into()); }
     } else if let Some(pos) = args.iter().position(|a| a == "--update-repo") {
         if let Some(repo) = args.get(pos + 1) {
@@ -405,6 +490,17 @@ async fn setup_environment_stream(
     event_id: String,
 ) -> Result<(), String> {
     log::info!("setup_environment_stream(install_path={}, event_id={})", install_path, event_id);
+    
+    // Log to console if enabled
+    let _ = add_log_entry(
+        state.clone(),
+        app_handle.clone(),
+        "info".to_string(),
+        "GUI".to_string(),
+        format!("Starting environment setup at: {}", install_path),
+        Some("environment".to_string()),
+    ).await;
+    
     let install_dir = std::path::PathBuf::from(&install_path);
     let mut cfg = state.config.lock().map_err(|_| "State poisoned")?.clone();
     if cfg.get_config().install_path.as_os_str().is_empty() {
@@ -416,11 +512,15 @@ async fn setup_environment_stream(
     let ev_id = event_id.clone();
     let app_progress = app.clone();
     let ev_progress = ev_id.clone();
+    
     let emit = move |phase: String, done: usize, total: usize| {
         let _ = app_progress.emit(
             &format!("env-setup-progress-{}", ev_progress),
-            UiProgressEvent { phase, done, total },
+            UiProgressEvent { phase: phase.clone(), done, total },
         );
+        
+        // Note: Progress logging removed due to lifetime constraints
+        // Progress is still logged via the main success/error handlers
     };
 
     let mut success = true;
@@ -433,11 +533,33 @@ async fn setup_environment_stream(
             &format!("env-setup-error-{}", event_id),
             e.to_string(),
         );
+        
+        // Log error to console
+        let _ = add_log_entry(
+            state.clone(),
+            app_handle.clone(),
+            "error".to_string(),
+            "CLI".to_string(),
+            format!("Environment setup failed: {}", e),
+            Some("environment".to_string()),
+        ).await;
+    } else {
+        // Log success to console
+        let _ = add_log_entry(
+            state.clone(),
+            app_handle.clone(),
+            "info".to_string(),
+            "CLI".to_string(),
+            "Environment setup completed successfully".to_string(),
+            Some("environment".to_string()),
+        ).await;
     }
+    
     let _ = app_handle.emit(
         &format!("env-setup-finished-{}", event_id),
         StreamFinished { success, exit_code: Some(if success { 0 } else { 1 }) },
     );
+    
     // Reload config so in-memory state matches file after setup
     if let Ok(updated) = PsConfigManager::new(None) {
         *state.config.lock().map_err(|_| "State poisoned")? = updated;
@@ -913,10 +1035,108 @@ async fn complete_uninstall(state: tauri::State<'_, AppState>) -> Result<Install
     }
 }
 
+// Console logging commands
+#[tauri::command]
+async fn get_console_logs(state: tauri::State<'_, AppState>) -> Result<Vec<LogEntry>, String> {
+    let buffer = state.log_buffer.lock().map_err(|_| "Log buffer poisoned")?;
+    Ok(buffer.iter().cloned().collect())
+}
+
+#[tauri::command]
+async fn clear_console_logs(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let mut buffer = state.log_buffer.lock().map_err(|_| "Log buffer poisoned")?;
+    buffer.clear();
+    Ok(())
+}
+
+#[tauri::command]
+async fn toggle_console(state: tauri::State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    let mut console_enabled = state.console_enabled.lock().map_err(|_| "Console enabled state poisoned")?;
+    *console_enabled = enabled;
+    Ok(())
+}
+
+#[tauri::command]
+async fn is_console_enabled(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    let console_enabled = state.console_enabled.lock().map_err(|_| "Console enabled state poisoned")?;
+    Ok(*console_enabled)
+}
+
+#[tauri::command]
+async fn add_log_entry(
+    state: tauri::State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+    level: String,
+    source: String,
+    message: String,
+    module: Option<String>,
+) -> Result<(), String> {
+    let console_enabled = {
+        let enabled = state.console_enabled.lock().map_err(|_| "Console enabled state poisoned")?;
+        *enabled
+    };
+    
+    if !console_enabled {
+        return Ok(());
+    }
+    
+    let entry = LogEntry {
+        timestamp: Utc::now(),
+        level: level.clone(),
+        source: source.clone(),
+        message: message.clone(),
+        module,
+    };
+    
+    // Add to buffer
+    {
+        let mut buffer = state.log_buffer.lock().map_err(|_| "Log buffer poisoned")?;
+        buffer.push_back(entry.clone());
+        
+        // Keep buffer size manageable (max 1000 entries)
+        if buffer.len() > 1000 {
+            buffer.pop_front();
+        }
+    }
+    
+    // Emit to frontend
+    let _ = app_handle.emit("console-log", &entry);
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_console_settings(state: tauri::State<'_, AppState>) -> Result<ConsoleSettings, String> {
+    let console_enabled = {
+        let enabled = state.console_enabled.lock().map_err(|_| "Console enabled state poisoned")?;
+        *enabled
+    };
+    
+    Ok(ConsoleSettings {
+        enabled: console_enabled,
+        max_entries: 1000,
+        log_level: "info".to_string(),
+    })
+}
+
+#[tauri::command]
+async fn set_console_settings(
+    state: tauri::State<'_, AppState>,
+    settings: ConsoleSettings,
+) -> Result<(), String> {
+    let mut console_enabled = state.console_enabled.lock().map_err(|_| "Console enabled state poisoned")?;
+    *console_enabled = settings.enabled;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .manage(AppState { config: Mutex::new(PsConfigManager::new(None).unwrap_or_else(|_| PsConfigManager::new(Some(PathBuf::from("."))).expect("config init"))) })
+        .manage(AppState { 
+            config: Mutex::new(PsConfigManager::new(None).unwrap_or_else(|_| PsConfigManager::new(Some(PathBuf::from("."))).expect("config init"))),
+            log_buffer: Arc::new(Mutex::new(VecDeque::new())),
+            console_enabled: Arc::new(Mutex::new(false)),
+        })
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -960,7 +1180,15 @@ pub fn run() {
             install_msvc_bt,
             is_admin,
             is_first_run,
-            copy_self_to_install_path
+            copy_self_to_install_path,
+            // Console logging commands
+            get_console_logs,
+            clear_console_logs,
+            toggle_console,
+            is_console_enabled,
+            add_log_entry,
+            get_console_settings,
+            set_console_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

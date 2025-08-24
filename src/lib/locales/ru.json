@@ -100,6 +100,8 @@
     "theme_dark": "Темная",
     "theme_system": "Системная",
     "danger_zone": "Опасная зона",
+    "danger_zone_description": "Необратимые действия, которые повлияют на всю вашу установку",
+    "danger_zone_warning_title": "Прежде чем продолжить",
     "danger_warning": "Полное удаление навсегда удалит все данные, репозитории и окружения.\nЭто действие необратимо!",
     "complete_uninstall": "Полное удаление",
     "confirm_uninstall": "Подтверждение полного удаления",
@@ -124,7 +126,9 @@
     "cancel": "Отмена",
     "confirm": "Подтвердить",
     "unknown": "Неизвестно",
-    "environment_not_found": "Окружение не найдено"
+    "environment_not_found": "Окружение не найдено",
+    "close_modal": "Закрыть модальное окно",
+    "action_cannot_be_undone": "Это действие нельзя отменить"
   },
   "updater": {
     "check_for_updates": "Проверить обновления",
@@ -149,5 +153,64 @@
     "not_installed": "✗ У вас не установлены Build Tools. Если столкнетесь с ошибками сборки, возможно, стоит их установить",
     "not_admin": "✗ Программа запущена не от имени администратора. Для установки Build Tools требуется перезапустить приложение от администратора",
     "install_button": "Установить MSVC Build Tools"
+  }
+  ,
+  "debug_console": {
+    "title": "Консоль отладки",
+    "header": {
+      "title": "Консоль отладки",
+      "logs_count": "Логи:",
+      "status_active": "Консоль активна",
+      "status_inactive": "Консоль отключена"
+    },
+    "filters": {
+      "all_levels": "Все уровни",
+      "all_sources": "Все источники",
+      "search_placeholder": "Поиск...",
+      "level_debug": "Debug",
+      "level_info": "Info",
+      "level_warn": "Warning",
+      "level_error": "Error",
+      "source_gui": "GUI",
+      "source_cli": "CLI"
+    },
+    "actions": {
+      "clear": "Очистить",
+      "clear_tooltip": "Очистить логи",
+      "reset": "Сбросить",
+      "reset_tooltip": "Сбросить фильтры",
+      "hide": "Скрыть консоль",
+      "show": "Показать консоль",
+      "saving": "Сохранение..."
+    },
+    "messages": {
+      "disabled": "Консоль отключена. Включите её в настройках.",
+      "no_logs": "Логи отсутствуют",
+      "no_matches": "Нет логов, соответствующих фильтрам"
+    },
+    "settings": {
+      "title": "Консоль отладки",
+      "description": "Мониторинг и управление отладочным выводом",
+      "enable_label": "Включить консоль",
+      "enable_description": "Включите для отображения логов от GUI и CLI в реальном времени",
+      "enable_sr": "Включить консоль",
+      "status_label": "Статус:",
+      "status_active": "Активна",
+      "status_inactive": "Отключена",
+      "logs_in_buffer": "Логов в буфере:",
+      "max_entries": "Максимум записей:",
+      "log_level_label": "Уровень логирования",
+      "log_level_debug": "Debug (все логи)",
+      "log_level_info": "Info (информация и выше)",
+      "log_level_warn": "Warning (предупреждения и ошибки)",
+      "log_level_error": "Error (только ошибки)",
+      "log_level_description": "Выберите минимальный уровень логов для отображения",
+      "clear_logs": "Очистить логи",
+      "quick_actions": "Быстрые действия"
+    },
+    "toggle": {
+      "enable_tooltip": "Включить консоль",
+      "toggle_tooltip": "Переключить консоль"
+    }
   }
 }
