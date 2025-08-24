@@ -23,7 +23,7 @@
 </script>
 
 <button
-  class="fixed bottom-4 right-4 bg-gray-800 hover:bg-gray-700 text-white p-3 rounded-full shadow-lg z-40 transition-colors"
+  class="fixed bottom-4 right-4 bg-gray-800 hover:bg-gray-700 text-white p-3 rounded-full shadow-lg z-50 transition-colors"
   on:click={toggleVisibility}
   title={$consoleState.isEnabled ? $_('debug_console.toggle.toggle_tooltip') : $_('debug_console.toggle.enable_tooltip')}
 >

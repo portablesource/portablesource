@@ -189,6 +189,8 @@ async fn download_and_install_cli(state: tauri::State<'_, AppState>, install_pat
 
 #[tauri::command]
 async fn run_cli_command(state: tauri::State<'_, AppState>, install_path: String, args: Vec<String>) -> Result<CommandResult, String> {
+    println!("[DEBUG] run_cli_command called with args: {:?}", args);
+    
     let install_dir = PathBuf::from(&install_path);
     let mut cfg = state.config.lock().map_err(|_| "State poisoned")?.clone();
     if cfg.get_config().install_path.as_os_str().is_empty() {
@@ -208,10 +210,21 @@ async fn run_cli_command(state: tauri::State<'_, AppState>, install_path: String
         if let Some(repo) = args.get(pos + 1) {
             let mut installer = PsRepoInstaller::new(install_dir.clone(), cfg.clone());
             match installer.install_repository(repo).await {
-                Ok(_) => stdout.push_str("Repository installed successfully\n"),
-                Err(e) => { success = false; stderr.push_str(&e.to_string()); }
+                Ok(_) => {
+                    println!("[DEBUG] Repository installation successful");
+                    stdout.push_str("Repository installed successfully\n");
+                }
+                Err(e) => { 
+                    println!("[DEBUG] Repository installation failed: {}", e);
+                    success = false; 
+                    stderr.push_str(&e.to_string()); 
+                }
             }
-        } else { success = false; stderr.push_str("Missing repository name"); }
+        } else { 
+            println!("[DEBUG] Missing repository name for --install-repo");
+            success = false; 
+            stderr.push_str("Missing repository name"); 
+        }
     } else if let Some(pos) = args.iter().position(|a| a == "--update-repo") {
         if let Some(repo) = args.get(pos + 1) {
             let mut installer = PsRepoInstaller::new(install_dir.clone(), cfg.clone());
@@ -239,7 +252,23 @@ async fn run_cli_command(state: tauri::State<'_, AppState>, install_path: String
             }
             Err(e) => { success = false; stderr.push_str(&e.to_string()); }
         }
+    } else if args.contains(&"list-repos".to_string()) {
+        let installer = PsRepoInstaller::new(install_dir.clone(), cfg.clone());
+        match installer.list_repositories() {
+            Ok(repos) => {
+                if repos.is_empty() {
+                    stdout.push_str("No repositories installed\n");
+                } else {
+                    stdout.push_str("Installed repositories:\n");
+                    for repo in repos {
+                        stdout.push_str(&format!("  - {}\n", repo));
+                    }
+                }
+            }
+            Err(e) => { success = false; stderr.push_str(&e.to_string()); }
+        }
     } else {
+        println!("[DEBUG] Unsupported command arguments: {:?}", args);
         success = false;
         stderr.push_str("Unsupported command arguments");
     }
@@ -250,6 +279,7 @@ async fn run_cli_command(state: tauri::State<'_, AppState>, install_path: String
     } else {
         *state.config.lock().map_err(|_| "State poisoned")? = cfg;
     }
+    
     Ok(CommandResult { success, stdout, stderr, exit_code: Some(if success { 0 } else { 1 }) })
 }
 

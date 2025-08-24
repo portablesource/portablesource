@@ -89,6 +89,9 @@
   let currentView = 'top-repos'; // 'top-repos', 'installed-repos', 'settings'
   let showInstallNotification = false;
   let installedRepoName = '';
+  let showErrorNotification = false;
+  let errorRepoName = '';
+  let errorMessage = '';
 
   // Theme state
   let currentTheme = 'system'; // 'light', 'dark', 'system'
@@ -621,7 +624,7 @@
         return;
       }
 
-      installStatus = $_('repositories.installing');
+      installStatus = $_('repositories.installing') + ' ' + repoName + '...';
       
       const cliArgs = ['--install-repo', repoName];
       
@@ -629,6 +632,9 @@
       
       if (result.success) {
         await loadInstalledRepos();
+        
+        // Small delay to ensure filesystem sync
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         // Show successful installation notification
         installedRepoName = repoName;
@@ -645,11 +651,33 @@
         console.log('Installation failed:', result);
         installStatus = $_('repositories.installation_error', { values: { repoName, error: result.stderr || result.stdout || $_('repositories.unknown_error') } });
         consoleService.error(`Failed to install repository '${repoName}': ${result.stderr || result.stdout || 'Unknown error'}`, 'Repository');
+        
+        // Show error notification
+        errorRepoName = repoName;
+        errorMessage = result.stderr || result.stdout || $_('repositories.unknown_error');
+        showErrorNotification = true;
+        showInstallNotification = false;
+        
+        // Hide error notification after 5 seconds
+        setTimeout(() => {
+          showErrorNotification = false;
+        }, 5000);
       }
     } catch (error) {
       console.error('Error during repository installation:', error);
       installStatus = $_('repositories.installation_error', { values: { repoName, error: String(error) } });
       consoleService.error(`Repository installation error for '${repoName}': ${String(error)}`, 'Repository');
+      
+      // Show error notification
+      errorRepoName = repoName;
+      errorMessage = String(error);
+      showErrorNotification = true;
+      showInstallNotification = false;
+      
+      // Hide error notification after 5 seconds
+      setTimeout(() => {
+        showErrorNotification = false;
+      }, 5000);
     } finally {
       isInstallingRepo = false;
       installingRepoName = '';
@@ -675,10 +703,15 @@
   // Install repository by user-provided input (URL or name)
   async function installRepoFromInput(userInput: string) {
     const displayName = extractRepoDisplayName(userInput);
+    
     try {
       consoleService.info(`Starting installation of repository: ${displayName}`, 'Repository');
       isInstallingRepo = true;
       installingRepoName = displayName;
+      
+      // Reset notification states
+      showInstallNotification = false;
+      showErrorNotification = false;
 
       if (!cliInstalled) {
         installStatus = $_('cli.not_installed');
@@ -699,28 +732,73 @@
       const envStatus = await invoke('check_environment_status', { install_path: installPath, installPath }) as {
         environment_exists: boolean, setup_completed: boolean, overall_status: string
       };
-      if (!envStatus.setup_completed) { installStatus = $_('installation.environment_setup_first'); return; }
+      
+      // Allow installation if environment exists (tools are working) even if setup_completed is false
+      if (!envStatus.environment_exists) { 
+        installStatus = $_('installation.environment_setup_first'); 
+        return; 
+      }
 
-      installStatus = $_('repositories.installing');
+      // Show immediate installation progress notification
+      installStatus = $_('repositories.installing') + ' ' + displayName + '...';
+      
+      // Force UI update to show installation status immediately
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const cliArgs = ['--install-repo', userInput];
+      
       const result = await invoke('run_cli_command', {
-        install_path: installPath, installPath, args: ['--install-repo', userInput]
+        install_path: installPath, installPath, args: cliArgs
       }) as {success: boolean, stdout: string, stderr: string, exit_code: number | null};
 
       if (result.success) {
         await loadInstalledRepos();
+        
+        // Small delay to ensure filesystem sync
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Show successful installation notification
         installedRepoName = displayName;
         showInstallNotification = true;
+        showErrorNotification = false; // Ensure error notification is hidden
         installStatus = $_('repositories.successfully_installed', { values: { name: displayName } });
         consoleService.info(`Repository '${displayName}' installed successfully`, 'Repository');
-        setTimeout(() => { showInstallNotification = false; setCurrentView('installed-repos'); }, 3000);
+        
+        // Automatically hide notification after 3 seconds and navigate to installed repositories
+        setTimeout(() => { 
+          showInstallNotification = false; 
+          setCurrentView('installed-repos'); 
+        }, 3000);
       } else {
         installStatus = $_('repositories.installation_error', { values: { repoName: displayName, error: result.stderr || result.stdout || $_('repositories.unknown_error') } });
         consoleService.error(`Failed to install repository '${displayName}': ${result.stderr || result.stdout || 'Unknown error'}`, 'Repository');
+        
+        // Show error notification
+        errorRepoName = displayName;
+        errorMessage = result.stderr || result.stdout || $_('repositories.unknown_error');
+        showErrorNotification = true;
+        showInstallNotification = false; // Ensure success notification is hidden
+        
+        // Hide error notification after 5 seconds
+        setTimeout(() => {
+          showErrorNotification = false;
+        }, 5000);
       }
     } catch (error) {
       console.error('Error during repository installation (input):', error);
       installStatus = $_('repositories.installation_error', { values: { repoName: displayName, error: String(error) } });
       consoleService.error(`Repository installation error for '${displayName}': ${String(error)}`, 'Repository');
+      
+      // Show error notification
+      errorRepoName = displayName;
+      errorMessage = String(error);
+      showErrorNotification = true;
+      showInstallNotification = false; // Ensure success notification is hidden
+      
+      // Hide error notification after 5 seconds
+      setTimeout(() => {
+        showErrorNotification = false;
+      }, 5000);
     } finally {
       isInstallingRepo = false;
       installingRepoName = '';
@@ -1273,6 +1351,12 @@
     
     <!-- Step 4: Main Interface -->
     {#if currentStep === 'main-interface'}
+      <!-- Debug notification state (remove in production) -->
+      <!-- 
+      Debug info: showInstallNotification = {showInstallNotification}, showErrorNotification = {showErrorNotification}
+      installedRepoName = {installedRepoName}, errorRepoName = {errorRepoName}, errorMessage = {errorMessage}
+      -->
+      
       <!-- Successful installation notification -->
       {#if showInstallNotification}
         <div class="install-notification">
@@ -1280,6 +1364,17 @@
             <span class="notification-icon">✅</span>
             <span class="notification-text">{$_('repositories.successfully_installed', { values: { name: installedRepoName } })}</span>
             <button class="notification-close" on:click={() => showInstallNotification = false}>×</button>
+          </div>
+        </div>
+      {/if}
+      
+      <!-- Error notification -->
+      {#if showErrorNotification}
+        <div class="error-notification">
+          <div class="notification-content error">
+            <span class="notification-icon">❌</span>
+            <span class="notification-text">{$_('repositories.installation_error', { values: { repoName: errorRepoName, error: errorMessage } })}</span>
+            <button class="notification-close" on:click={() => showErrorNotification = false}>×</button>
           </div>
         </div>
       {/if}
@@ -1295,6 +1390,16 @@
           {/if}
         </h1>
       </div>
+
+      <!-- Global Installation Status Display (visible in all views) -->
+      {#if installStatus && isInstallingRepo}
+        <div class="installation-status">
+          <div class="status-content">
+            <span class="spinner"></span>
+            <span class="status-text">{installStatus}</span>
+          </div>
+        </div>
+      {/if}
 
       <!-- Top Repositories View -->
       {#if currentView === 'top-repos'}
@@ -1362,18 +1467,6 @@
              <div class="modal-actions">
                <button class="btn-secondary" on:click={closeAddRepoModal}>{$_('common.cancel')}</button>
                <button class="btn-primary" on:click={confirmAddRepoModal}>{$_('common.confirm')}</button>
-             </div>
-           </div>
-         {/if}
-
-
-         
-         <!-- Installation Status Display -->
-         {#if installStatus && isInstallingRepo}
-           <div class="installation-status">
-             <div class="status-content">
-               <span class="spinner"></span>
-               <span class="status-text">{installStatus}</span>
              </div>
            </div>
          {/if}
@@ -3094,9 +3187,18 @@
   .install-notification {
     position: fixed;
     top: 20px;
-    right: 20px;
+    left: 20px;
     z-index: 1000;
-    animation: slideInRight 0.3s ease-out;
+    animation: slideInLeft 0.3s ease-out;
+  }
+  
+  /* Error Notification */
+  .error-notification {
+    position: fixed;
+    top: 80px;
+    left: 20px;
+    z-index: 1000;
+    animation: slideInLeft 0.3s ease-out;
   }
 
   .notification-content {
@@ -3108,8 +3210,15 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    min-width: 300px;
-    max-width: 400px;
+    min-width: 250px;
+    max-width: 500px;
+    white-space: nowrap;
+  }
+  
+  .notification-content.error {
+    background: linear-gradient(135deg, var(--danger-color) 0%, var(--button-danger-hover) 100%);
+    color: var(--text-primary);
+    box-shadow: 0 8px 25px var(--shadow-danger);
   }
 
   .notification-icon {
@@ -3143,9 +3252,9 @@
     background: var(--bg-hover-alpha);
   }
 
-  @keyframes slideInRight {
+  @keyframes slideInLeft {
     from {
-      transform: translateX(100%);
+      transform: translateX(-100%);
       opacity: 0;
     }
     to {
@@ -3273,7 +3382,7 @@
   .installation-status {
     position: fixed;
     bottom: 20px;
-    right: 20px;
+    right: 80px; /* Moved left to avoid console toggle button */
     background: linear-gradient(135deg, var(--button-primary) 0%, var(--button-primary-hover) 100%);
     color: var(--text-primary);
     padding: 16px 20px;
@@ -3281,6 +3390,9 @@
     box-shadow: 0 4px 20px var(--shadow-primary);
     z-index: 1000;
     animation: slideInUp 0.3s ease;
+    min-width: 200px;
+    max-width: 500px;
+    white-space: nowrap;
   }
 
   .status-content {
